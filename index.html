@@ -85,7 +85,7 @@ select.pill:focus,input.pill:focus{border-color:var(--plan)}
 .tj-lim .mon-sel{flex:0 0 auto}
 .tj-benes{display:flex;flex-direction:column;gap:3px;padding:2px 0;align-items:center}
 /* cada beneficio en UNA línea, con columnas fijas para que se lean alineados */
-.tj-b{display:grid;grid-template-columns:minmax(96px,1fr) 46px 10px 72px 104px 22px;
+.tj-b{display:grid;grid-template-columns:minmax(96px,1fr) 46px 10px 104px 22px;
       align-items:center;gap:5px}
 .tj-b .cel{width:100%;padding:4px 6px}
 .tj-b .cel.n{text-align:right;font-variant-numeric:tabular-nums}
@@ -486,7 +486,10 @@ var CORREO_FIJO="victor@finanzas.app";   // correo interno fijo; el usuario solo
    El nombre debe coincidir con el de la forma de pago para poder cruzarlos.
 ============================================================================= */
 function tarjetaVacia(){
-  return {id:"tj"+id(), nombre:"", corte:null, pago:null, limite:0, limMon:"Lps", benes:[], nota:""};
+  /* tope: UNO por tarjeta. Si la tarjeta da beneficio en varios rubros, todos
+     acumulan contra el mismo tope; no hay un tope por rubro. */
+  return {id:"tj"+id(), nombre:"", corte:null, pago:null, limite:0, limMon:"Lps",
+          tope:0, benes:[], nota:""};
 }
 /* Las tres tarjetas que Victor dictó, escritas UNA sola vez como si las hubiera
    cargado él. Si ya existe una tarjeta cuyo nombre contiene la clave, se le
@@ -494,14 +497,14 @@ function tarjetaVacia(){
    forma de pago); si no existe, se crea. Después de eso queda todo a su mano:
    lo que edite o borre no vuelve a aparecer. */
 var TJ_DICTADAS=[
-  {clave:"economia", nombre:"EconoMía BAC", corte:12, pago:3,
-   benes:[{que:"Supermercados",pct:7,tope:1200,tipo:"cashback"},
-          {que:"Educación",    pct:7,tope:1200,tipo:"cashback"}]},
-  {clave:"gascard",  nombre:"GasCard BAC",  corte:9,  pago:30,
-   benes:[{que:"Gasolineras",  pct:7,tope:300, tipo:"descuento"}]},
-  {clave:"promerica",nombre:"Promérica",    corte:19, pago:10,
-   benes:[{que:"Supermercados",pct:7,tope:1300,tipo:"cashback"},
-          {que:"Farmacias",    pct:7,tope:1300,tipo:"cashback"}]}
+  {clave:"economia", nombre:"EconoMía BAC", corte:12, pago:3, tope:1200,
+   benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
+          {que:"Educación",    pct:7,tipo:"cashback"}]},
+  {clave:"gascard",  nombre:"GasCard BAC",  corte:9,  pago:30, tope:300,
+   benes:[{que:"Gasolineras",  pct:7,tipo:"descuento"}]},
+  {clave:"promerica",nombre:"Promérica",    corte:19, pago:10, tope:1300,
+   benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
+          {que:"Farmacias",    pct:7,tipo:"cashback"}]}
 ];
 function sembrarTarjetasDictadas(){
   TJ_DICTADAS.forEach(function(d){
@@ -509,8 +512,8 @@ function sembrarTarjetasDictadas(){
       return tjClave(x.nombre).replace(/\s+/g,"").indexOf(d.clave)>=0;
     })[0];
     if(!t){ t=tarjetaVacia(); t.nombre=d.nombre; S.tarjetas.push(t); }
-    t.corte=d.corte; t.pago=d.pago;
-    t.benes=d.benes.map(function(b){ return {que:b.que,pct:b.pct,tope:b.tope,tipo:b.tipo}; });
+    t.corte=d.corte; t.pago=d.pago; t.tope=d.tope;
+    t.benes=d.benes.map(function(b){ return {que:b.que,pct:b.pct,tipo:b.tipo}; });
   });
 }
 function tjClave(s){                      /* "Promérica" y "Promerica" son la misma */
@@ -535,9 +538,15 @@ function normalizaTarjetas(){
     r.limMon = (FX_MONEDAS.indexOf(t.limMon)>=0) ? t.limMon : "Lps";
     r.nota   = t.nota||"";
     r.benes  = Array.isArray(t.benes)? t.benes.map(function(b){
-      return {que:(b&&b.que)||"", pct:(b&&+b.pct)||0, tope:(b&&+b.tope)||0,
+      return {que:(b&&b.que)||"", pct:(b&&+b.pct)||0,
               tipo:(b&&b.tipo==="descuento")?"descuento":"cashback"};
     }) : [];
+    /* Migración: antes el tope estaba en cada beneficio. Como en realidad es uno
+       solo para toda la tarjeta, se sube el mayor de los que hubiera. */
+    r.tope = red(+t.tope||0);
+    if(!r.tope && Array.isArray(t.benes)){
+      t.benes.forEach(function(b){ var v=red(+(b&&b.tope)||0); if(v>r.tope) r.tope=v; });
+    }
     return r;
   });
   if(!S.tjPref||typeof S.tjPref!=="object"||Array.isArray(S.tjPref)) S.tjPref={};
@@ -3170,7 +3179,8 @@ function abreAjustes(seccion){
         '<th class="plano tj-cen" style="width:74px" title="Día del mes en que cierra el estado de cuenta.">Corte</th>'+
         '<th class="plano tj-cen" style="width:92px" title="Último día del mes para pagar sin recargo. Es un día, no una fecha completa: el mes lo pone el corte que estés viendo.">Día de pago</th>'+
         '<th class="plano tj-cen" style="width:104px" title="Límite de crédito, en lempiras. Solo anotado: la app no lleva cuánto llevás usado ni te avisa si te acercás.">Límite</th>'+
-        '<th class="plano tj-cen" title="Lo que devuelve o descuenta la tarjeta por rubro. Se escribe a mano y no se calcula solo.">Beneficios</th>'+
+        '<th class="plano tj-cen" style="width:110px" title="Tope del beneficio, en lempiras. Es UNO por tarjeta: si la tarjeta da beneficio en varios rubros, todos acumulan contra este mismo tope. Solo anotado; la app no lo va descontando.">Tope</th>'+
+        '<th class="plano tj-cen" title="Lo que devuelve o descuenta la tarjeta por rubro. Se escribe a mano y no se calcula solo. El tope de la columna anterior los cubre a todos juntos.">Beneficios</th>'+
         '<th class="plano tj-cen" style="width:120px" title="Marca a mano, para esta ventana. La app no lo deduce de la fecha ni lo da por hecho: si no lo marcás, queda pendiente aunque el día de pago ya haya pasado. No mueve ningún número ni crea movimiento alguno.">'+
           'Corte '+esc(S.ui.per?(S.ui.per+" "+S.ui.anio):"—")+'</th>'+
         '<th class="plano" style="width:34px"></th>'+
@@ -3187,13 +3197,14 @@ function abreAjustes(seccion){
               ['Lps'].concat(FX_MONEDAS).map(function(x){
                 return '<option'+(x===(t.limMon||"Lps")?" selected":"")+'>'+x+'</option>'; }).join("")+
             '</select></div></td>'+
+          '<td class="tj-cen"><input class="cel" data-tc="tope" value="'+esc(t.tope?t.tope:"")+'" placeholder="—" '+
+            'title="Uno solo para toda la tarjeta: todos sus rubros con beneficio acumulan contra este tope."></td>'+
           '<td><div class="tj-benes">'+
             (t.benes.length? t.benes.map(function(b,j){
               return '<div class="tj-b" data-bj="'+j+'">'+
                 '<input class="cel" data-tb="que" value="'+esc(b.que)+'" placeholder="rubro">'+
                 '<input class="cel n" data-tb="pct" value="'+esc(b.pct||"")+'" placeholder="%" title="Porcentaje que devuelve o descuenta.">'+
                 '<span class="sub">%</span>'+
-                '<input class="cel n" data-tb="tope" value="'+esc(b.tope||"")+'" placeholder="tope" title="Tope del beneficio, en lempiras. Solo anotado; la app no lo va descontando.">'+
                 '<select class="cel" data-tb="tipo">'+
                   '<option value="cashback"'+(b.tipo!=="descuento"?" selected":"")+'>cashback</option>'+
                   '<option value="descuento"'+(b.tipo==="descuento"?" selected":"")+'>descuento</option>'+
@@ -3211,7 +3222,7 @@ function abreAjustes(seccion){
           '</td>'+
           '<td><button class="borrar" data-acc="tj-borrar" title="Quitar esta tarjeta de la libreta. No toca ningún movimiento.">×</button></td>'+
         '</tr>';
-      }).join("") : '<tr><td colspan="7" class="sub" style="padding:14px 8px">Todavía no hay tarjetas anotadas.</td></tr>')+
+      }).join("") : '<tr><td colspan="8" class="sub" style="padding:14px 8px">Todavía no hay tarjetas anotadas.</td></tr>')+
       '</tbody></table></div>'+
       '<div class="barra-h" style="margin-top:10px">'+
       '<button class="btn gh peq" data-acc="tj-nueva">+ Agregar tarjeta</button></div></div>'+
@@ -4187,6 +4198,7 @@ document.addEventListener("input", function(ev){
     }
     else if(tc==="limite") tjx.limite=red(+String(t.value||"").replace(/[^\d.]/g,"")||0);
     else if(tc==="limMon") tjx.limMon=(FX_MONEDAS.indexOf(t.value)>=0)?t.value:"Lps";
+    else if(tc==="tope") tjx.tope=red(+String(t.value||"").replace(/[^\d.]/g,"")||0);
     else{
       var vtj=String(t.value||"").replace(/[^\d]/g,"");
       if(vtj===""){ tjx[tc]=null; if(t.value!=="") t.value=""; }

@@ -373,6 +373,7 @@ button.ct-v.c-plan:hover{background:#e6effc}
       <button class="tab" data-tab="mov" id="tab-mov">Movimientos</button>
       <button class="tab" data-tab="rub" id="tab-rub">Presupuesto</button>
       <button class="tab" data-tab="deu" id="tab-deu">Préstamos</button>
+      <button class="tab" data-tab="cie" id="tab-cie">Cierres</button>
     </nav>
     <div class="sp"></div>
     <div class="nb" id="nubeCaja" data-t="nubeCaja"></div>
@@ -1552,21 +1553,35 @@ function pisoPerm(k,cat){
 function compromiso(k){
   var pend=0, det=[];
   rubrosDe(k).forEach(function(r){
-    var porPres=(r.pres==null)?0:Math.max(0, cts(r.pres)-cts(r.gastado));
+    /* Lo gastado no puede ser negativo para esto. Un rubro que solo recibe
+       devoluciones (Descuentos/Reembolsos) tiene gasto real negativo, y restar
+       un negativo inventaba un compromiso que no existe: con presupuesto 0 y
+       −279 de reembolsos, la app creía que todavía quedaban 279 por gastar. */
+    var gPos=Math.max(0, cts(r.gastado));
+    var porPres=(r.pres==null)?0:Math.max(0, cts(r.pres)-gPos);
     var porPerm=cts(r.permPend);
     var v=Math.max(porPres,porPerm);
     if(v>0){ pend+=v; det.push({cat:r.cat, porPres:porPres/100, porPerm:porPerm/100, val:v/100}); }
   });
-  /* El rubro de ahorro no es un compromiso: esa plata no sale, se guarda.
-     Se aparta de los compromisos y reaparece como parte del saldo libre. */
-  var ca=catAhorro(), res=0;
-  det=det.filter(function(d){ if(d.cat!==ca) return true; res=d.val; return false; });
-  pend-=cts(res);
+  /* DURANTE la ventana el ahorro cuenta como un compromiso más: la plata que se
+     va a apartar no está disponible para gastar. Solo AL CIERRE se lo trata como
+     ahorro, sumado a lo que haya sobrado (ver vistaCierres). */
   det.sort(function(a,b){ return b.val-a.val; });
   var t=totales(k), ip=ingresoPendiente(k);
   var libre=red(t.queda+ip.pendiente-pend/100);
-  return {pendiente:red(pend/100), det:det, ingPend:ip.pendiente, ingDet:ip.det,
-          reservaAhorro:res, sobrante:red(libre-res), libre:libre};
+  return {pendiente:red(pend/100), det:det, ingPend:ip.pendiente, ingDet:ip.det, libre:libre};
+}
+/* ═══════════ CIERRE DE UNA VENTANA ═══════════════════════════════════
+   El ahorro real solo se sabe cuando la ventana ya pasó y los gastos reales
+   están todos adentro. Son dos partes, las dos de dinero que existió:
+     · lo que se apartó al rubro de ahorro (gasto real de ese rubro)
+     · lo que sobró de todo lo demás (saldo real de la ventana)
+   No se guarda nada: se calcula de los movimientos cada vez que se mira.      */
+function cierre(k){
+  var t=totales(k), ap=totAhorro(k), pres=totPresupuestado(k);
+  return {k:k, ing:t.ing, egr:t.egr, sobrante:t.queda,
+          apartado:ap, ahorroReal:red(t.queda+ap),
+          pres:pres, dif:red(pres-t.egr), n:movsDe(k).length};
 }
 /* ═══════════ COTEJO: LO PLANEADO CONTRA LO REAL ═══════════════════════
    Dos mundos paralelos que nunca se mezclan.
@@ -1746,16 +1761,17 @@ function render(){
 function render0(){
   var app=$("#app");
   /* Los préstamos no dependen de ninguna ventana: se pueden ver desde el arranque. */
-  if(!S.ventanas.length && S.ui.tab!=="deu"){ app.innerHTML=vistaBienvenida(); pintarSelector(); pintarTabs(); pintaFX(); return; }
+  if(!S.ventanas.length && S.ui.tab!=="deu" && S.ui.tab!=="cie"){ app.innerHTML=vistaBienvenida(); pintarSelector(); pintarTabs(); pintaFX(); return; }
   if(!S.ventanas.length){ app.innerHTML=vistaDeuda(); pintarSelector(); pintarTabs(); pintaFX(); return; }
   pintarSelector(); pintarTabs(); pintaFX();
   if(S.ui.tab==="hoy") app.innerHTML=vistaHoy();
   else if(S.ui.tab==="mov") app.innerHTML=vistaMovimientos();
   else if(S.ui.tab==="deu") app.innerHTML=vistaDeuda();
+  else if(S.ui.tab==="cie") app.innerHTML=vistaCierres();
   else app.innerHTML=vistaRubros();
 }
 function pintarTabs(){
-  ["hoy","mov","rub","deu"].forEach(function(t){
+  ["hoy","mov","rub","deu","cie"].forEach(function(t){
     var b=$("#tab-"+t); if(b) b.className="tab"+(S.ui.tab===t?" on":"");
   });
 }
@@ -1834,14 +1850,6 @@ function vistaHoy(){
       '<button class="num-lnk '+(cmp.libre<0?"rojo":"verde")+'" style="font-size:34px;font-weight:700;letter-spacing:-.02em" '+
         'data-desg="libre" data-t="numLibre">'+fmt(cmp.libre,true)+'</button>'+
       '<div class="pron-pie">saldo real'+(cmp.ingPend>0?' + ingreso por entrar':'')+' − compromisos pendientes</div>'+
-      '<div class="pron-dos">'+
-        '<button class="pron-p" data-desg="ahorropres" data-t="numAhorroPres" title="'+esc(
-          "Lo que el rubro «"+catAhorro()+"» tiene presupuestado y todavía no se apartó. No es un compromiso: esa plata no sale, se guarda — por eso está dentro del saldo libre y no restando.")+'">'+
-          '<span class="et">Ahorro presupuestado</span><span class="vl">'+fmt(cmp.reservaAhorro)+'</span></button>'+
-        '<button class="pron-p" data-desg="sobrante" data-t="numSobrante" title="'+esc(
-          "El resto del saldo libre: plata que a esta altura no está gastada, ni comprometida por ningún rubro, ni reservada para ahorrar. Negativo = los compromisos ya superan a lo disponible.")+'">'+
-          '<span class="et">Sobrante sin asignar</span><span class="vl'+(cmp.sobrante<0?" rojo":"")+'">'+fmt(cmp.sobrante,true)+'</span></button>'+
-      '</div>'+
     '</div>'+
     '<div style="margin-top:11px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">'+
       '<div><div class="pron-et">Compromisos pendientes</div>'+
@@ -1978,6 +1986,61 @@ function panelRubrosHoy(k){
           'title="Igualar el presupuesto de este rubro a su gasto real, sin bajar de sus permanentes activos.">=</button></td>'+
       '</tr>';
     }).join("")+'</tbody></table></div></div>';
+}
+
+/* ---------------- PANTALLA · CIERRES ----------------
+   Una fila por ventana, de la más nueva a la más vieja. Todo sale de los
+   movimientos y del presupuesto de cada ventana: no se guarda ningún cierre,
+   así que corregir un movimiento viejo corrige su cierre solo.
+
+   El AHORRO REAL de una ventana son dos cosas, las dos de dinero que existió:
+     · lo apartado — el gasto real del rubro de ahorro
+     · el sobrante — el saldo real de la ventana, lo que quedó de todo lo demás
+   Durante la ventana el ahorro cuenta como compromiso; acá, ya cerrada, vuelve
+   a ser ahorro. Nada de esto cruza de una ventana a otra: cada fila se lee sola. */
+function vistaCierres(){
+  ordenaVentanas();
+  var vs=S.ventanas.slice().reverse();
+  if(!vs.length) return '<div class="card"><div class="vacio">Todavía no hay ventanas.</div></div>';
+  var ca=catAhorro();
+  var f=vs.map(function(v){ return cierre(K(v.anio,v.per)); });
+  var kA=kAct();
+  return '<div class="card">'+
+    '<div class="barra-h" style="margin-bottom:8px">'+
+      '<h2 style="margin:0" title="Cómo terminó cada ventana. Se calcula de los movimientos y del presupuesto cada vez que se abre esta pantalla: no hay ningún cierre guardado que pueda quedar viejo.">Cierre de cada ventana</h2>'+
+      '<div class="sp"></div>'+
+      '<span class="sub" title="Ninguna cifra de esta pantalla se arrastra a otra ventana. Cada fila se lee sola.">nada se arrastra de una ventana a la otra</span>'+
+    '</div>'+
+    '<div class="tabla-cont"><table data-t="tablaCierres"><thead><tr>'+
+      '<th class="plano" style="width:16%">Ventana</th>'+
+      '<th class="der" style="width:14%" title="Suma de los movimientos de tipo Ingreso de esa ventana.">Ingresos</th>'+
+      '<th class="der" style="width:14%" title="Suma de los movimientos de tipo Egreso de esa ventana, incluido lo apartado al rubro de ahorro.">Gastos reales</th>'+
+      '<th class="der" style="width:14%" title="Lo que se presupuestó en total para esa ventana.">Presupuesto</th>'+
+      '<th class="der" style="width:14%" title="Presupuesto menos gasto real. Positivo = se gastó menos de lo planeado.">Contra el plan</th>'+
+      '<th class="der" style="width:14%" title="'+esc("Gasto real del rubro «"+ca+"»: plata que ya salió de la cuenta y quedó guardada.")+'">Apartado</th>'+
+      '<th class="der" style="width:14%" title="'+esc("Lo apartado al rubro «"+ca+"» más lo que sobró de todo lo demás (ingresos − gastos reales). Es el ahorro de verdad de esa ventana, y solo se sabe cuando la ventana ya pasó.")+'">Ahorro real</th>'+
+    '</tr></thead><tbody>'+
+    f.map(function(c){
+      var neg=c.ahorroReal<0, esAct=(c.k===kA);
+      return '<tr data-cie="'+esc(c.k)+'"'+(esAct?' style="background:var(--plan-bg)"':'')+'>'+
+        '<td style="padding:7px 8px">'+esc(nomVentana(c.k))+
+          (esAct?' <span class="chip" title="Es la ventana que estás viendo en el resto de la app. Todavía puede cambiar.">en curso</span>':'')+
+          '<div class="sub" style="font-size:11px">'+c.n+' movimiento'+(c.n===1?"":"s")+'</div></td>'+
+        '<td class="num">'+fmt(c.ing)+'</td>'+
+        '<td class="num">'+fmt(c.egr)+'</td>'+
+        '<td class="num">'+(c.pres?fmt(c.pres):'<span class="sub">—</span>')+'</td>'+
+        '<td class="num"'+(c.pres?'':' ')+'>'+(c.pres?
+            '<span style="color:'+(c.dif<0?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(c.dif,true)+'</span>'
+            :'<span class="sub">—</span>')+'</td>'+
+        '<td class="num">'+(c.apartado?fmt(c.apartado):'<span class="sub">—</span>')+'</td>'+
+        '<td class="num" style="font-weight:650;color:'+(neg?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(c.ahorroReal,true)+'</td>'+
+      '</tr>';
+    }).join("")+'</tbody></table></div>'+
+    '<div class="sub" style="margin-top:9px;font-size:12.5px">'+
+      'Ahorro real = apartado en <b>'+esc(ca)+'</b> + sobrante (ingresos − gastos reales). '+
+      'Durante la ventana el ahorro cuenta como compromiso en la proyección; acá, ya cerrada, vuelve a ser ahorro.'+
+    '</div>'+
+  '</div>';
 }
 
 /* ---------------- PANTALLA 2 · MOVIMIENTOS ---------------- */
@@ -2919,19 +2982,6 @@ function desglose(cual,extra){
     formula="Movimientos de la ventana en el rubro <b>"+esc(catAhorro())+"</b>: plata que ya salió de la cuenta "+
       "y quedó guardada. Lo que todavía falta por ahorrar vive en la proyección, dentro del "+
       "<b>saldo libre proyectado</b>."; }
-  else if(cual==="ahorropres"){ titulo="Ahorro presupuestado &middot; "+S.ui.per+" "+S.ui.anio;
-    var cA=compromiso(k); total=cA.reservaAhorro; lineas=[];
-    formula="Lo que el rubro <b>"+esc(catAhorro())+"</b> tiene presupuestado y todavía no se apartó.<br>"+
-      "No es un compromiso pendiente: esa plata no se va a gastar, se guarda. Por eso está <b>dentro</b> "+
-      "del saldo libre proyectado y no restándolo.<br>"+
-      "Se asigna en la pestaña <b>Presupuesto</b>. Al registrar el movimiento de ahorro, esta cifra baja "+
-      "y aparece en la baldosa <b>"+esc(catAhorro())+" apartado</b>."; }
-  else if(cual==="sobrante"){ titulo="Sobrante sin asignar &middot; "+S.ui.per+" "+S.ui.anio;
-    var cS=compromiso(k); total=cS.sobrante; lineas=[];
-    formula="<code>saldo libre proyectado − ahorro presupuestado</code><br>"+
-      "<code>"+fmt(cS.libre,true)+" − "+fmt(cS.reservaAhorro)+" = "+fmt(cS.sobrante,true)+"</code><br>"+
-      "Plata que a esta altura no está gastada, ni comprometida por ningún rubro, ni reservada para ahorrar.<br>"+
-      "Negativo significa que los compromisos pendientes ya superan a lo disponible."; }
   else if(cual==="comprometido"){ titulo="Compromisos pendientes &middot; "+S.ui.per+" "+S.ui.anio;
     var c=compromiso(k); total=c.pendiente;
     lineas=c.det.map(function(d){ return {t:d.cat, v:d.val,
@@ -2939,9 +2989,11 @@ function desglose(cual,extra){
     formula="Plata que la ventana todavía tiene que pagar: lo que falta ejecutar del presupuesto y los "+
       "permanentes activos que aún no se marcaron.<br>"+
       "Por rubro se toma el <b>mayor</b> entre los dos, nunca la suma: el presupuesto de un rubro ya debería "+
-      "cubrir sus permanentes, y sumarlos sería contar el mismo importe dos veces.<br>"+
-      "El rubro <b>"+esc(catAhorro())+"</b> queda fuera: esa plata no sale, se guarda, y por eso vive dentro "+
-      "del saldo libre proyectado.<br>"+
+      "cubrir sus permanentes, y sumarlos sería contar el mismo importe dos veces. Un gasto suelto en un "+
+      "rubro <b>no</b> descuenta el compromiso de sus permanentes: cada permanente se descuenta al marcar "+
+      "su casilla, no antes.<br>"+
+      "El rubro <b>"+esc(catAhorro())+"</b> cuenta como cualquier otro: durante la ventana esa plata está "+
+      "comprometida. Solo al cerrar se la trata como ahorro (ver la pestaña <b>Cierres</b>).<br>"+
       "<b>No entra en los gastos reales.</b> Es una proyección."; }
   else if(cual==="ingpend"){ titulo="Ingreso permanente por entrar &middot; "+S.ui.per+" "+S.ui.anio;
     var ci=compromiso(k); total=ci.ingPend;
@@ -5799,6 +5851,7 @@ window.__tot=function(){ return totales(kAct()); };
 window.__B=function(){ return B; };
 window.__perms=function(){ return permsK(kAct()); };
 window.__cmp=function(){ return compromiso(kAct()); };
+window.__cierre=function(){ return cierre(kAct()); };
 window.__cot=function(){ return cotejo(kAct()); };
 window.__parse=qParsePaste;
 window.__av={de:function(i){ return avisoDe(permsK(kAct()).filter(function(x){return x.id===i;})[0]); },

@@ -316,6 +316,17 @@ tr.reemb-pend td:first-child{box-shadow:inset 3px 0 0 var(--avi)}
 tr.reemb-libre td{background:var(--avi-bg)}
 tr.dupe td{background:var(--mal-bg)}
 tr.dupe td:first-child{box-shadow:inset 3px 0 0 var(--mal)}
+/* color de fila por forma de pago · los avisos (duplicado, reembolso) mandan */
+tr.pinta td{background:var(--fila-bg)}
+tr.pinta.reemb-pend td,tr.pinta.reemb-libre td{background:var(--avi-bg)}
+tr.pinta.dupe td{background:var(--mal-bg)}
+/* filtro Todo / Ingresos / Egresos */
+.ftipo{display:inline-flex;border:1px solid var(--linea);border-radius:6px;overflow:hidden;background:var(--card2)}
+.ft{background:none;border:0;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--tx2)}
+.ft+.ft{border-left:1px solid var(--linea)}
+.ft:hover{background:var(--linea2)}
+.ft.on{background:var(--plan-bg);color:var(--plan-tx);font-weight:650}
+.tj-col{width:26px;height:18px;border-radius:4px;border:1px solid var(--linea);display:inline-block;vertical-align:middle}
 .pbt.reemb{border-color:var(--avi-linea);background:var(--avi-bg);color:var(--avi-tx);opacity:1}
 .pbt.reemb.ok{border-color:var(--ok-bg);background:var(--ok-bg);color:var(--ok-tx)}
 tr:hover .pbt.reemb{border-color:var(--avi-linea)}
@@ -533,6 +544,8 @@ function sembrarTarjetasDictadas(){
     })[0];
     if(!t){ t=tarjetaVacia(); t.nombre=d.nombre; S.tarjetas.push(t); }
     t.corte=d.corte; t.pago=d.pago; t.tope=d.tope;
+    var col=TJ_COLORES_SEMILLA[d.clave];
+    if(col && !tjColor()[t.nombre]) tjColor()[t.nombre]=col;
     t.benes=d.benes.map(function(b){ return {que:b.que,pct:b.pct,tipo:b.tipo}; });
   });
 }
@@ -571,6 +584,7 @@ function normalizaTarjetas(){
   });
   if(!S.tjPref||typeof S.tjPref!=="object"||Array.isArray(S.tjPref)) S.tjPref={};
   if(!S.tjPago||typeof S.tjPago!=="object"||Array.isArray(S.tjPago)) S.tjPago={};
+  if(!S.tjColor||typeof S.tjColor!=="object"||Array.isArray(S.tjColor)) S.tjColor={};
   if(!S.prefs) S.prefs={};
   if(!S.prefs.tjDictadas){ sembrarTarjetasDictadas(); S.prefs.tjDictadas=true; }
 }
@@ -591,6 +605,32 @@ function tjMarcaPago(k,nombre,on){
   var m=tjPagoK(k);
   if(on) m[nombre]=true; else delete m[nombre];
   guardar();
+}
+/* ---------- COLOR DE FILA POR FORMA DE PAGO ----------
+   Un fondo tenue para reconocer de un vistazo con qué se pagó cada movimiento.
+   Se guarda por NOMBRE de forma de pago, igual que tjPago y tjPref, así que
+   renombrar una tarjeta arrastra su color. Los ingresos van siempre en verde,
+   por encima de cualquier color de tarjeta: primero importa si entró o salió. */
+var TJ_COLORES=[
+  {v:"",         t:"— sin color —", bg:""},
+  {v:"azul",     t:"azul",          bg:"#e8f0fb"},
+  {v:"amarillo", t:"amarillo",      bg:"#fdf6e0"},
+  {v:"naranja",  t:"naranja",       bg:"#fdeee2"},
+  {v:"violeta",  t:"violeta",       bg:"#f2eefb"},
+  {v:"rosa",     t:"rosa",          bg:"#fceef4"},
+  {v:"gris",     t:"gris",          bg:"#f0f0ee"}
+];
+var TJ_COLOR_ING="#eef8ee";                 /* verde de ingreso, no configurable */
+var TJ_COLORES_SEMILLA={"gascard":"azul", "economia":"amarillo", "promerica":"naranja"};
+function tjColor(){ if(!S.tjColor||typeof S.tjColor!=="object") S.tjColor={}; return S.tjColor; }
+function colorDe(v){
+  var c=TJ_COLORES.filter(function(x){ return x.v===v; })[0];
+  return c? c.bg : "";
+}
+function fondoMov(m){
+  if(!m) return "";
+  if(m.tipo==="Ingreso") return TJ_COLOR_ING;
+  return colorDe(tjColor()[m.pago||""]);
 }
 function tarjetaDe(tid){ return (S.tarjetas||[]).filter(function(t){ return t.id===tid; })[0]||null; }
 function diaTxt(n){ return (n===0||n)?String(n):"—"; }
@@ -772,9 +812,9 @@ function estadoVacio(){
     ui:{tab:"hoy",anio:null,per:null,
         ordMov:{k:"fecha",dir:-1}, ordRub:{k:"queda",dir:-1},
         ordPerm:{k:"desc",dir:1}, ordPermI:{k:"desc",dir:1}, ordHoy:{k:"queda",dir:1}, busca:"",
-        cieAb:"", cieRub:"",
+        cieAb:"", cieRub:"", fTipo:"todo",
         prSim:{}, prTabla:null, prDatos:null},
-    ventanas:[], formas:[], catE:[], catI:[], catIcons:{}, tarjetas:[], tjPref:{}, tjPago:{},
+    ventanas:[], formas:[], catE:[], catI:[], catIcons:{}, tarjetas:[], tjPref:{}, tjPago:{}, tjColor:{},
     permanentes:[], perms:{}, alias:{}, movimientos:[], presu:{}, cuento:{}, prefs:{}, prestamos:[], bitacora:[],
     fx:{USD:26.7650, CAD:19.0930, EUR:30.8090, fecha:"2026-07-31", src:"inicial", ts:"", auto:true}
   };
@@ -2173,7 +2213,12 @@ function vistaCierres(){
 /* ---------------- PANTALLA 2 · MOVIMIENTOS ---------------- */
 function movsOrdenados(){
   var k=kAct(), o=S.ui.ordMov, q=(S.ui.busca||"").toLowerCase().trim();
+  var ft=S.ui.fTipo||"todo";
   var arr=movsDe(k);
+  /* El filtro es de VISTA: esconde filas, no cambia ni un total. */
+  if(ft==="Ingreso"||ft==="Egreso") arr=arr.filter(function(m){
+    return (m.tipo==="Ingreso") === (ft==="Ingreso");
+  });
   if(q) arr=arr.filter(function(m){
     return (String(m.desc||"")+" "+String(m.cat||"")+" "+String(m.pago||"")+" "+String(m.motivo||"")).toLowerCase().indexOf(q)>=0;
   });
@@ -2182,6 +2227,13 @@ function movsOrdenados(){
     if(o.k==="monto"){ x=cts(a.monto); y=cts(b.monto); }
     else { x=String(a[o.k]||"").toLowerCase(); y=String(b[o.k]||"").toLowerCase(); }
     if(x<y) return -1*o.dir; if(x>y) return 1*o.dir;
+    /* Segundo orden SIEMPRE por fecha, de la más nueva a la más vieja: al
+       ordenar por tarjeta o por rubro, cada grupo queda cronológico por dentro
+       en vez de en un orden arbitrario. */
+    if(o.k!=="fecha"){
+      var fa=String(a.fecha||""), fb=String(b.fecha||"");
+      if(fa!==fb) return fa<fb? 1 : -1;
+    }
     return String(a.id)<String(b.id)?-1:1;
   });
   return ordenCongelado("mov", k+"|"+o.k+"|"+o.dir+"|"+q, arr, function(m){ return m.id; });
@@ -2222,6 +2274,12 @@ function vistaMovimientos(){
     '<div class="barra-h">'+
       '<button class="btn gh" data-acc="pegar-bloque" data-t="btnPegarBloque" title="Carga masiva: pegar un estado de cuenta completo en una grilla y revisarlo antes de guardar.">Pegar en bloque</button>'+
       '<button class="btn gh peq" data-acc="mov-nuevo" data-t="btnMovNuevo" title="Agregar una fila vacía al final de la tabla.">+ Fila</button>'+
+      '<div class="ftipo" data-t="filtroTipo" title="Qué filas se ven en la tabla. No cambia ningún número: los totales de abajo siguen siendo los de la ventana entera.">'+
+        ["todo","Ingreso","Egreso"].map(function(x){
+          var et=(x==="todo")?"Todo":(x==="Ingreso"?"Ingresos":"Egresos");
+          return '<button class="ft'+((S.ui.fTipo||"todo")===x?" on":"")+'" data-ftipo="'+x+'">'+et+'</button>';
+        }).join("")+
+      '</div>'+
       '<input class="pill" id="buscaMov" placeholder="buscar…" value="'+esc(S.ui.busca||"")+'" style="width:190px">'+
       (nDup?'<span class="chip mal" data-t="chipDupTotal" title="'+esc(
         "Movimientos de esta ventana con el mismo importe y la misma descripción a pocos días de distancia. "+
@@ -2286,8 +2344,11 @@ function filaMov(m){
   var cls=rG? (cobr?" reemb-ok":" reemb-pend") : (rC&&!gLig? " reemb-libre":"");
   var dup=MOV_DUP[m.id];
   if(dup) cls+=" dupe";
-  return '<tr data-id="'+esc(m.id)+'"'+(cls?' class="'+cls.slice(1)+'"':"")+lig+
-    (m.permId?' style="box-shadow:inset 3px 0 0 var(--ok)"':"")+'>'+
+  var bg=fondoMov(m), est=[];
+  if(bg) est.push("--fila-bg:"+bg);
+  if(m.permId) est.push("box-shadow:inset 3px 0 0 var(--ok)");
+  return '<tr data-id="'+esc(m.id)+'"'+(cls?' class="'+cls.slice(1)+(bg?" pinta":"")+'"':(bg?' class="pinta"':""))+lig+
+    (est.length?' style="'+est.join(";")+'"':"")+'>'+
     '<td><input class="cel" type="date" data-c="fecha" value="'+esc(m.fecha||"")+'"></td>'+
     '<td><select class="cel" data-c="tipo"><option'+(m.tipo==="Egreso"?" selected":"")+'>Egreso</option><option'+(m.tipo==="Ingreso"?" selected":"")+'>Ingreso</option></select></td>'+
     '<td><input class="cel" data-c="desc" title="'+esc(m.desc||"")+'" value="'+esc(m.desc||"")+'"></td>'+
@@ -3358,6 +3419,7 @@ function abreAjustes(seccion){
         '<th class="plano tj-cen" style="width:74px" title="Día del mes en que cierra el estado de cuenta.">Corte</th>'+
         '<th class="plano tj-cen" style="width:92px" title="Último día del mes para pagar sin recargo. Es un día, no una fecha completa: el mes lo pone el corte que estés viendo.">Día de pago</th>'+
         '<th class="plano tj-cen" style="width:104px" title="Límite de crédito, en lempiras. Solo anotado: la app no lleva cuánto llevás usado ni te avisa si te acercás.">Límite</th>'+
+        '<th class="plano tj-cen" style="width:104px" title="Color tenue con el que se pintan en Movimientos las filas pagadas con esta tarjeta. Los ingresos van siempre en verde, sin importar la tarjeta.">Color</th>'+
         '<th class="plano tj-cen" style="width:110px" title="Tope del beneficio, en lempiras. Es UNO por tarjeta: si la tarjeta da beneficio en varios rubros, todos acumulan contra este mismo tope. Solo anotado; la app no lo va descontando.">Tope</th>'+
         '<th class="plano tj-cen" title="Lo que devuelve o descuenta la tarjeta por rubro. Se escribe a mano y no se calcula solo. El tope de la columna anterior los cubre a todos juntos.">Beneficios</th>'+
         '<th class="plano tj-cen" style="width:120px" title="Marca a mano, para esta ventana. La app no lo deduce de la fecha ni lo da por hecho: si no lo marcás, queda pendiente aunque el día de pago ya haya pasado. No mueve ningún número ni crea movimiento alguno.">'+
@@ -3376,6 +3438,13 @@ function abreAjustes(seccion){
               ['Lps'].concat(FX_MONEDAS).map(function(x){
                 return '<option'+(x===(t.limMon||"Lps")?" selected":"")+'>'+x+'</option>'; }).join("")+
             '</select></div></td>'+
+          '<td class="tj-cen">'+
+            '<select class="cel" data-tc="color" style="width:96px">'+
+              TJ_COLORES.map(function(c){
+                return '<option value="'+c.v+'"'+((tjColor()[t.nombre]||"")===c.v?" selected":"")+'>'+c.t+'</option>';
+              }).join("")+'</select>'+
+            (colorDe(tjColor()[t.nombre])?'<div class="tj-col" style="background:'+colorDe(tjColor()[t.nombre])+';margin-top:3px"></div>':'')+
+          '</td>'+
           '<td class="tj-cen"><input class="cel" data-tc="tope" value="'+esc(t.tope?t.tope:"")+'" placeholder="—" '+
             'title="Uno solo para toda la tarjeta: todos sus rubros con beneficio acumulan contra este tope."></td>'+
           '<td><div class="tj-benes">'+
@@ -3401,7 +3470,7 @@ function abreAjustes(seccion){
           '</td>'+
           '<td><button class="borrar" data-acc="tj-borrar" title="Quitar esta tarjeta de la libreta. No toca ningún movimiento.">×</button></td>'+
         '</tr>';
-      }).join("") : '<tr><td colspan="8" class="sub" style="padding:14px 8px">Todavía no hay tarjetas anotadas.</td></tr>')+
+      }).join("") : '<tr><td colspan="9" class="sub" style="padding:14px 8px">Todavía no hay tarjetas anotadas.</td></tr>')+
       '</tbody></table></div>'+
       '<div class="barra-h" style="margin-top:10px">'+
       '<button class="btn gh peq" data-acc="tj-nueva">+ Agregar tarjeta</button></div></div>'+
@@ -3951,7 +4020,7 @@ function heredarAhora(tipo){
    EVENTOS
 ============================================================================= */
 document.addEventListener("click", function(ev){
-  var t=ev.target, b=t.closest?t.closest("[data-acc],[data-desg],[data-mos],[data-ord],[data-ordr],[data-ordp],[data-ordpi],[data-ordh],[data-tab],[data-ajt]"):null;
+  var t=ev.target, b=t.closest?t.closest("[data-acc],[data-desg],[data-mos],[data-ord],[data-ordr],[data-ordp],[data-ordpi],[data-ordh],[data-tab],[data-ajt],[data-ftipo]"):null;
   /* mosaico: un bloque abre o cierra el detalle de ese rubro */
   if(b && b.hasAttribute && b.hasAttribute("data-mos")){
     var mc=b.getAttribute("data-mos");
@@ -3971,6 +4040,8 @@ document.addEventListener("click", function(ev){
   if(!b) return;
 
   /* pestañas */
+  var ftp=b.getAttribute("data-ftipo");
+  if(ftp){ S.ui.fTipo=ftp; guardar(); render(); return; }
   var tab=b.getAttribute("data-tab");
   if(tab){ S.ui.tab=tab; ordenOlvida(); guardar(); render(); return; }
   var ajt=b.getAttribute("data-ajt");
@@ -4388,11 +4459,13 @@ document.addEventListener("input", function(ev){
       if(antTj && antTj!==t.value){
         for(var kp in S.tjPago) if(S.tjPago[kp][antTj]){ S.tjPago[kp][t.value]=true; delete S.tjPago[kp][antTj]; }
         var P2=tjPref(); for(var rp in P2) if(P2[rp]===antTj) P2[rp]=t.value;
+        var C2=tjColor(); if(C2[antTj]){ C2[t.value]=C2[antTj]; delete C2[antTj]; }
       }
     }
     else if(tc==="limite") tjx.limite=red(+String(t.value||"").replace(/[^\d.]/g,"")||0);
     else if(tc==="limMon") tjx.limMon=(FX_MONEDAS.indexOf(t.value)>=0)?t.value:"Lps";
     else if(tc==="tope") tjx.tope=red(+String(t.value||"").replace(/[^\d.]/g,"")||0);
+    else if(tc!=="corte" && tc!=="pago") return;   /* los desplegables se guardan en "change" */
     else{
       var vtj=String(t.value||"").replace(/[^\d]/g,"");
       if(vtj===""){ tjx[tc]=null; if(t.value!=="") t.value=""; }
@@ -4515,6 +4588,13 @@ document.addEventListener("change", function(ev){
     var xc=cs2[+trc2.getAttribute("data-cr")]; if(!xc) return;
     if(crc==="tomar"){ xc.tomar=t.checked; bResumen(); return; }
     xc[crc]=t.value; bResumen(); return;
+  }
+  /* el color de fila de una tarjeta */
+  if(t.getAttribute && t.getAttribute("data-tc")==="color"){
+    var trk=t.closest("tr[data-tj]"); if(!trk) return;
+    var tjk=tarjetaDe(trk.getAttribute("data-tj")); if(!tjk) return;
+    if(t.value) tjColor()[tjk.nombre]=t.value; else delete tjColor()[tjk.nombre];
+    guardar(); reTarjetas(); return;
   }
   /* la moneda del límite de una tarjeta (los <select> no emiten "input") */
   if(t.getAttribute && t.getAttribute("data-tc")==="limMon"){

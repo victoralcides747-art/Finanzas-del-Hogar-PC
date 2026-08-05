@@ -52,8 +52,14 @@ header{background:var(--card);border-bottom:1px solid var(--linea);position:stic
 .tab:hover{background:var(--linea2)}
 .tab.on{background:var(--plan-bg);color:var(--plan-tx);font-weight:600;box-shadow:inset 0 0 0 1px var(--plan-linea)}
 .sp{flex:1}
-.vsel{display:flex;align-items:center;gap:6px}
-.vsel label{font-size:11.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em}
+/* La ventana activa se navega mucho y decide dónde cae todo lo que se guarda:
+   tiene que verse sin buscarla, incluso con un modal abierto encima. */
+.vsel{display:flex;align-items:center;gap:7px;background:var(--plan-bg);
+  border:1px solid var(--plan-linea);border-radius:8px;padding:3px 4px 3px 9px}
+.vsel label{font-size:10.5px;color:var(--plan-tx);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.vsel select.pill{border-color:var(--plan-linea);font-weight:650;color:var(--plan-tx);font-size:13.5px}
+.mh .vent{font-size:12px;font-weight:650;color:var(--plan-tx);background:var(--plan-bg);
+  border:1px solid var(--plan-linea);border-radius:6px;padding:2px 8px;margin-left:8px;white-space:nowrap}
 select.pill,input.pill{background:var(--card);border:1px solid var(--linea);border-radius:6px;padding:5px 8px;outline:none}
 select.pill:focus,input.pill:focus{border-color:var(--plan)}
 .fx{display:flex;align-items:center;gap:3px;border:1px solid var(--linea);border-radius:6px;
@@ -277,6 +283,12 @@ tr.lista td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
 .mos-v{font-size:11px;font-variant-numeric:tabular-nums;opacity:.92}
 .mos-p{font-size:10.5px;opacity:.78;margin-top:auto}
 .mos-det{margin-top:10px;border:1px solid var(--linea);border-radius:6px;padding:9px 10px;background:var(--card)}
+.cie-grid{display:grid;grid-template-columns:1fr minmax(280px,340px);gap:14px;align-items:start}
+.cie-tj{border:1px solid var(--linea);border-radius:6px;padding:9px 10px;background:var(--card)}
+.cie-tj table{width:100%}
+.tj-pun{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid var(--linea);
+  margin-right:6px;vertical-align:-1px}
+@media (max-width:1100px){ .cie-grid{grid-template-columns:1fr} }
 @media (max-width:900px){ .mos{height:260px} }
 .est.lista{color:var(--ok-tx)}
 .est.falta{color:var(--avi-tx);font-weight:600}
@@ -316,10 +328,13 @@ tr.reemb-pend td:first-child{box-shadow:inset 3px 0 0 var(--avi)}
 tr.reemb-libre td{background:var(--avi-bg)}
 tr.dupe td{background:var(--mal-bg)}
 tr.dupe td:first-child{box-shadow:inset 3px 0 0 var(--mal)}
-/* color de fila por forma de pago · los avisos (duplicado, reembolso) mandan */
-tr.pinta td{background:var(--fila-bg)}
-tr.pinta.reemb-pend td,tr.pinta.reemb-libre td{background:var(--avi-bg)}
-tr.pinta.dupe td{background:var(--mal-bg)}
+/* Color de fila por forma de pago. Va con la misma especificidad que el hover
+   (tbody tr:hover td) para que no lo tape; los avisos —duplicado, reembolso—
+   siguen mandando sobre el color. */
+tbody tr.pinta td{background:var(--fila-bg)}
+tbody tr.pinta.reemb-pend td,tbody tr.pinta.reemb-libre td{background:var(--avi-bg)}
+tbody tr.pinta.dupe td{background:var(--mal-bg)}
+tbody tr.pinta:hover td{background:var(--card2)}
 /* filtro Todo / Ingresos / Egresos */
 .ftipo{display:inline-flex;border:1px solid var(--linea);border-radius:6px;overflow:hidden;background:var(--card2)}
 .ft{background:none;border:0;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--tx2)}
@@ -1673,7 +1688,7 @@ function cierre(k){
   var t=totales(k), ap=totAhorro(k), pres=totPresupuestado(k);
   return {k:k, ing:t.ing, egr:t.egr, sobrante:t.queda,
           apartado:ap, ahorroReal:red(t.queda+ap),
-          pres:pres, dif:red(pres-t.egr), n:movsDe(k).length};
+          pres:pres, n:movsDe(k).length};
 }
 /* ═══════════ COTEJO: LO PLANEADO CONTRA LO REAL ═══════════════════════
    Dos mundos paralelos que nunca se mezclan.
@@ -2159,6 +2174,41 @@ function mosaicoHTML(k){
   }
   return html;
 }
+/* CUÁNTO SE PAGÓ CON CADA TARJETA en esa ventana. Es la suma de los movimientos
+   de egreso por forma de pago: sirve para cotejar contra lo que el banco cobra.
+   No decide nada — si un corte está marcado como pagado, esa marca es suya. */
+function porTarjetaHTML(k){
+  var m={}, ord=[];
+  movsDe(k).forEach(function(x){
+    if(x.tipo==="Ingreso") return;
+    var p=x.pago||"— sin forma de pago —";
+    if(m[p]==null){ m[p]={cts:0,n:0}; ord.push(p); }
+    m[p].cts+=cts(x.monto); m[p].n++;
+  });
+  if(!ord.length) return "";
+  ord.sort(function(a,b){ return m[b].cts-m[a].cts; });
+  var tot=0; ord.forEach(function(p){ tot+=m[p].cts; });
+  var pag=tjPagoK(k);
+  return '<div class="cie-tj">'+
+    '<div class="sub" style="margin-bottom:6px" title="'+esc(
+      "Suma de los movimientos de egreso de esta ventana, agrupados por forma de pago. Es contra esto que se coteja lo que cada banco cobra. Los ingresos no entran.")+
+    '">Cuánto se pagó con cada tarjeta</div>'+
+    '<table><tbody>'+ord.map(function(p){
+      var col=colorPago(p), marcado=(pag[p]===true);
+      return '<tr>'+
+        '<td style="padding:4px 8px;white-space:nowrap">'+
+          (col?'<span class="tj-pun" style="background:'+col+'"></span>':'<span class="tj-pun" style="background:transparent;border-color:var(--linea)"></span>')+
+          esc(p)+
+          (marcado?' <span class="chip ok" title="'+esc("Vos marcaste el corte de esta tarjeta como pagado en esta ventana.")+'">corte pagado</span>':'')+
+        '</td>'+
+        '<td class="sub" style="padding:4px 8px;width:96px">'+m[p].n+' mov.</td>'+
+        '<td class="num" style="padding:4px 8px;width:124px">'+fmt(m[p].cts/100)+'</td></tr>';
+    }).join("")+
+    '<tr><td style="padding:6px 8px;border-top:1px solid var(--linea)"><b>Total</b></td>'+
+      '<td style="border-top:1px solid var(--linea)"></td>'+
+      '<td class="num" style="padding:6px 8px;border-top:1px solid var(--linea)"><b>'+fmt(tot/100)+'</b></td></tr>'+
+    '</tbody></table></div>';
+}
 function movsRubroHTML(k,cat){
   var ms=movsDe(k).filter(function(m){ return m.tipo!=="Ingreso" && (m.cat||"Sin categoría")===cat; })
                   .sort(function(a,b){ return cts(b.monto)-cts(a.monto); });
@@ -2203,13 +2253,12 @@ function vistaCierres(){
       '<span class="sub" title="Ninguna cifra de esta pantalla se arrastra a otra ventana. Cada fila se lee sola.">nada se arrastra de una ventana a la otra</span>'+
     '</div>'+
     '<div class="tabla-cont"><table data-t="tablaCierres"><thead><tr>'+
-      '<th class="plano" style="width:16%">Ventana</th>'+
-      '<th class="der" style="width:14%" title="Suma de los movimientos de tipo Ingreso de esa ventana.">Ingresos</th>'+
-      '<th class="der" style="width:14%" title="Suma de los movimientos de tipo Egreso de esa ventana, incluido lo apartado al rubro de ahorro.">Gastos reales</th>'+
-      '<th class="der" style="width:14%" title="Lo que se presupuestó en total para esa ventana.">Presupuesto</th>'+
-      '<th class="der" style="width:14%" title="Presupuesto menos gasto real. Positivo = se gastó menos de lo planeado.">Contra el plan</th>'+
-      '<th class="der" style="width:14%" title="'+esc("Gasto real del rubro «"+ca+"»: plata que ya salió de la cuenta y quedó guardada.")+'">Apartado</th>'+
-      '<th class="der" style="width:14%" title="'+esc("Lo apartado al rubro «"+ca+"» más lo que sobró de todo lo demás (ingresos − gastos reales). Es el ahorro de verdad de esa ventana, y solo se sabe cuando la ventana ya pasó.")+'">Ahorro real</th>'+
+      '<th class="plano" style="width:20%">Ventana</th>'+
+      '<th class="der" style="width:16%" title="Suma de los movimientos de tipo Ingreso de esa ventana.">Ingresos</th>'+
+      '<th class="der" style="width:16%" title="Suma de los movimientos de tipo Egreso de esa ventana, incluido lo apartado al rubro de ahorro.">Gastos reales</th>'+
+      '<th class="der" style="width:16%" title="Lo que se presupuestó en total para esa ventana. Al lado están los gastos reales: la comparación se ve sola.">Presupuesto</th>'+
+      '<th class="der" style="width:16%" title="'+esc("Gasto real del rubro «"+ca+"»: plata que ya salió de la cuenta y quedó guardada.")+'">Apartado</th>'+
+      '<th class="der" style="width:16%" title="'+esc("Lo apartado al rubro «"+ca+"» más lo que sobró de todo lo demás (ingresos − gastos reales). Es el ahorro de verdad de esa ventana, y solo se sabe cuando la ventana ya pasó.")+'">Ahorro real</th>'+
     '</tr></thead><tbody>'+
     f.map(function(c){
       var neg=c.ahorroReal<0, esAct=(c.k===kA), ab=(S.ui.cieAb===c.k);
@@ -2221,17 +2270,17 @@ function vistaCierres(){
         '<td class="num">'+fmt(c.ing)+'</td>'+
         '<td class="num">'+fmt(c.egr)+'</td>'+
         '<td class="num">'+(c.pres?fmt(c.pres):'<span class="sub">—</span>')+'</td>'+
-        '<td class="num"'+(c.pres?'':' ')+'>'+(c.pres?
-            '<span style="color:'+(c.dif<0?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(c.dif,true)+'</span>'
-            :'<span class="sub">—</span>')+'</td>'+
         '<td class="num">'+(c.apartado?fmt(c.apartado):'<span class="sub">—</span>')+'</td>'+
         '<td class="num" style="font-weight:650;color:'+(neg?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(c.ahorroReal,true)+'</td>'+
       '</tr>'+
-      (ab? '<tr class="cie-abre" data-cieab="'+esc(c.k)+'"><td colspan="7" style="padding:10px 10px 14px">'+
+      (ab? '<tr class="cie-abre" data-cieab="'+esc(c.k)+'"><td colspan="6" style="padding:10px 10px 14px">'+
              '<div class="sub" style="margin-bottom:7px" title="'+esc(
                "El área de cada bloque es su parte del gasto real de esta ventana. Clic en un bloque para ver sus movimientos.")+'">'+
              'En qué se fue el gasto de '+esc(nomVentana(c.k))+' &middot; clic en un bloque para el detalle</div>'+
-             mosaicoHTML(c.k)+
+             '<div class="cie-grid">'+
+               '<div>'+mosaicoHTML(c.k)+'</div>'+
+               porTarjetaHTML(c.k)+
+             '</div>'+
              (S.ui.cieRub? movsRubroHTML(c.k,S.ui.cieRub) : '')+
            '</td></tr>' : '');
     }).join("")+'</tbody></table></div>'+
@@ -2353,8 +2402,10 @@ function vistaMovimientos(){
    centavo, MISMA descripción de banco y pocos días de diferencia. La app marca
    los dos y no borra ninguno: cuál sobra lo sabe él.
 ============================================================================= */
+/* Si él ya dijo que un movimiento NO es duplicado, deja de compararse contra
+   todo: la sugerencia no vuelve. Es una marca suya, no una deducción. */
 function movDupes(k){
-  var arr=movsDe(k).filter(function(m){ return m.fecha && cts(m.monto) && qDescCore(m.desc); });
+  var arr=movsDe(k).filter(function(m){ return m.fecha && cts(m.monto) && qDescCore(m.desc) && !m.noDup; });
   var out={};
   for(var i=0;i<arr.length;i++){
     for(var j=i+1;j<arr.length;j++){
@@ -2400,7 +2451,13 @@ function filaMov(m){
             "menos de "+DIAS_REPE_CASI+" días de diferencia. Suele pasar cuando el mismo cargo se copia "+
             "de dos orígenes que lo escriben distinto y lo fechan distinto.")+
         " — «"+(dup.otro.desc||"")+"» "+fmt(dup.otro.monto)+" del "+fmtF(dup.otro.fecha)+
-        ". No se borra nada: revisar cuál sobra y quitarlo con la ×.")+'">×'+dup.n+'</span> ':'')+
+        ". No se borra nada: revisar cuál sobra y quitarlo con la ×.")+'">×'+dup.n+'</span>'+
+        '<button class="ln" data-acc="mov-nodup" style="font-size:10.5px;margin:0 6px 0 3px" title="'+esc(
+          "Descartar el aviso: este movimiento no es un duplicado. Deja de marcarse en rojo y vuelve al color de su tarjeta. La marca es tuya y no vuelve sola.")+
+        '">no es duplicado</button> ':'')+
+      (m.noDup?'<span class="chip" data-t="chipNoDup" title="'+esc(
+        "Vos descartaste el aviso de duplicado para este movimiento. Clic para volver a compararlo.")+
+        '" data-acc="mov-sidup" style="cursor:pointer">sin comparar</span> ':'')+
       (rG||rC? '<button class="pbt reemb'+(cobr||gLig?" ok":"")+'" data-acc="mov-reemb" title="'+esc(
           rG? (cobr? (cobroDe(m.id)? "Cobrado con el ingreso «"+(cobroDe(m.id).desc||"")+"». Clic para ver o desligar."
                                    : "Dado por cobrado a mano, sin ingreso ligado. Clic para quitar la marca.")
@@ -4193,6 +4250,18 @@ document.addEventListener("click", function(ev){
   if(acc==="bloquear"){ bloquearApp(); return; }
   if(acc==="nube-check"){ nubeVerificar(); return; }
   if(acc==="mos-cerrar"){ S.ui.cieRub=""; guardar(); render(); return; }
+  /* «no es duplicado»: la marca la pone él y no vuelve sola */
+  if(acc==="mov-nodup" || acc==="mov-sidup"){
+    var trD=b.closest("tr[data-id]"); if(!trD) return;
+    var mD=S.movimientos.filter(function(x){ return x.id===trD.getAttribute("data-id"); })[0];
+    if(!mD) return;
+    if(acc==="mov-nodup") mD.noDup=true; else delete mD.noDup;
+    guardar(); render();
+    toast(acc==="mov-nodup"
+      ? "Descartado &middot; «"+(mD.desc||"")+"» deja de compararse contra otros movimientos"
+      : "Vuelve a compararse contra los demás movimientos", 5000);
+    return;
+  }
   /* --- tarjetas (libreta de referencia; no toca ningún número) --- */
   if(acc==="tj-nueva"){ S.tarjetas.push(tarjetaVacia()); guardar(); reTarjetas(true); return; }
   if(acc==="tj-borrar"){
@@ -4443,6 +4512,19 @@ document.addEventListener("click", function(ev){
     toast(traer.length+" línea(s) traídas &middot; revisar: fueron clasificadas como traslados",5500);
     return;
   }
+  if(acc==="b-nodup" || acc==="b-sidup"){
+    var trN=b.closest("tr[data-b]"); if(!trN||!B) return;
+    var iN=+trN.getAttribute("data-b"), fN=B.filas[iN]; if(!fN) return;
+    if(acc==="b-nodup"){ fN.noRepe=true; fN.repe=null; fN.repeFila=null; }
+    else { delete fN.noRepe; fN.repe=bRepetida(fN); }
+    bRepeEnBloque(); bRepintaFila(iN); bRepintaEstados(); bResumen();
+    return;
+  }
+  if(acc==="cred-ver"){
+    var av=document.querySelector('[data-t="avisoCreditos"]');
+    if(av) av.scrollIntoView({block:"center"});
+    return;
+  }
   if(acc==="cred-todos"){
     if(!B) return;
     var cs=B.fuera.filter(function(x){ return x.esCred; });
@@ -4643,6 +4725,7 @@ document.addEventListener("change", function(ev){
     var cs2=B.fuera.filter(function(x){ return x.esCred; });
     var xc=cs2[+trc2.getAttribute("data-cr")]; if(!xc) return;
     if(crc==="tomar"){ xc.tomar=t.checked; bResumen(); return; }
+    if(crc==="como"){ xc.como=(t.value==="ing")?"ing":"desc"; xc.cat=""; bResumen(); return; }
     xc[crc]=t.value; bResumen(); return;
   }
   /* el color de fila de una tarjeta */
@@ -5039,7 +5122,12 @@ function qParseDate(s){
   return "";
 }
 /* Un pago de tarjeta no es un gasto nuevo: ya lo registraste compra por compra. */
-function qEsPagoTarjeta(d){ return /PAGO DE TARJETA|PAGO POR INTERNET|SU PAGO|PAGO RECIBIDO|ABONO A CAPITAL/i.test(String(d||"")); }
+/* Lo que las bancas escriben cuando el movimiento es el pago del corte, no una
+   compra. «PAGO TC ****-4098» es el de Promérica; los demás son de BAC. */
+function qEsPagoTarjeta(d){
+  return /PAGO DE TARJETA|PAGO TARJETA|PAGO\s*T\.?\s?C\b|PAGO POR INTERNET|SU PAGO|PAGO RECIBIDO|ABONO A CAPITAL/i
+    .test(String(d||""));
+}
 function qLimpiaDesc(t){ return String(t||"").replace(/^\d{5,}\s+/,"").replace(/\s*Nombre de cuenta\s*$/i,"").replace(/\s{2,}/g," ").trim(); }
 function qBancoLinea(l){
   var m=String(l).match(/^(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})\s+(.*?)\s+([+\-−]?[\d,]+\.\d{2})\s+([+\-−]?[\d,]+\.\d{2})(?:\s+([+\-−]?[\d,]+\.\d{2}))?\s*$/);
@@ -5082,9 +5170,19 @@ function qPasteTabular(lines){
          banco mete una columna corta (últimos 4 de la tarjeta, nº de documento) esa
          columna no debe pisar el nombre del comercio. */
       desc0=qLimpiaDesc(rest.map(function(r){return r.t;}).join(" "));
-      if(qEsPagoTarjeta(desc0)){ skip.pago++; fuera.push({fecha:fecha,desc:desc0,monto:banco.deb,motivo:"pago de tarjeta o traslado"}); return; }
+      if(qEsPagoTarjeta(desc0)){
+        skip.pago++;
+        /* Si viene por la columna de crédito, es un crédito igual: se lista con
+           los demás y él decide. Solo se marca que parece un pago de tarjeta. */
+        var esCr=(banco.cred>0.005 && banco.deb<=0.005);
+        fuera.push({fecha:fecha, desc:desc0, monto:esCr?banco.cred:banco.deb,
+                    moneda:monCel||"Lps",
+                    motivo:"pago de tarjeta o traslado", esCred:esCr, pagoTj:true});
+        return;
+      }
       if(banco.deb<=0.005){
-        if(banco.cred>0.005){ skip.cred++; fuera.push({fecha:fecha,desc:desc0,monto:banco.cred,motivo:"crédito o abono recibido",esCred:true}); }
+        if(banco.cred>0.005){ skip.cred++; fuera.push({fecha:fecha,desc:desc0,monto:banco.cred,
+          moneda:monCel||"Lps",motivo:"crédito o abono recibido",esCred:true}); }
         return;
       }
       pick=banco.usa[0]; banco.usa.forEach(function(c){ c.usada=true; });
@@ -5099,8 +5197,19 @@ function qPasteTabular(lines){
     var conLetras=txt.filter(function(s){ return /[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(s); });
     var desc=banco? desc0 : qLimpiaDesc(conLetras[0]||txt[0]||"");
     if(!banco && qEsPagoTarjeta(desc)){
-      skip.pago++; fuera.push({fecha:fecha,desc:desc,monto:pick?Math.abs(pick.v):0,motivo:"pago de tarjeta o traslado"}); return; }
+      skip.pago++; fuera.push({fecha:fecha,desc:desc,monto:pick?Math.abs(pick.v):0,
+        moneda:(pick&&pick.mon&&pick.mon!=="Lps")?pick.mon:(monCel||"Lps"),
+        motivo:"pago de tarjeta o traslado"}); return; }
+    /* Importe en negativo: BAC manda así sus créditos, en la misma columna del
+       cargo. Es un crédito igual que la columna aparte de Promerica: se aparta
+       para que él lo vea y decida, no entra solo a la grilla. */
     var mon=(pick&&pick.mon&&pick.mon!=="Lps")?pick.mon:(monCel||"Lps");
+    if(!banco && pick && pick.v<-0.005){
+      skip.cred++;
+      fuera.push({fecha:fecha, desc:desc, monto:Math.abs(pick.v), moneda:mon,
+                  motivo:"crédito o abono recibido", esCred:true, pagoTj:false, neg:true});
+      return;
+    }
     var r={fecha:fecha, desc:desc, monto:pick?String(pick.v):"", moneda:mon,
            cat:banco?"":(conLetras[1]||""), pago:banco?"":(conLetras[2]||"")};
     if(r.desc||r.monto||r.fecha) out.push(r);
@@ -5132,17 +5241,33 @@ function qPasteVertical(lines){
       else if(ns.length>1){ var noRef=ns.filter(function(n){return !qEsRef(n.raw);}); if(noRef.length) ns=noRef; }
       var vs=ns.map(function(n){return n.v;});
       if(!desc||!vs.length){ cur=null; return; }       /* fecha suelta: no es una fila */
+      /* Importe en negativo: BAC manda así sus créditos, en la misma columna del
+         cargo. Es un crédito igual que la columna aparte de Promerica: se aparta
+         para que él lo vea y decida, no entra solo a la grilla. */
+      var iNeg=-1;
+      for(var q=0;q<ns.length;q++){ if(ns[q].neg&&ns[q].v>0.005){ iNeg=q; break; } }
+      if(iNeg>=0){
+        var esPn=qEsPagoTarjeta(desc);
+        if(esPn) skip.pago++; else skip.cred++;
+        fuera.push({fecha:cur.fecha, desc:desc, monto:ns[iNeg].v, moneda:cur.moneda||"Lps",
+                    motivo:esPn?"pago de tarjeta o traslado":"crédito o abono recibido",
+                    esCred:true, pagoTj:esPn, neg:true});
+        cur=null; return;
+      }
       if(cur.tipoHint==="Ingreso"||qEsPagoTarjeta(desc)){
         if(vs.some(function(v){return v>0.005;})){
-          var esP=qEsPagoTarjeta(desc);
+          var esP=qEsPagoTarjeta(desc), esCr=(cur.tipoHint==="Ingreso");
           if(esP) skip.pago++; else skip.cred++;
           fuera.push({fecha:cur.fecha,desc:desc,monto:vs.filter(function(v){return v>0.005;})[0],
-                      motivo:esP?"pago de tarjeta o traslado":"crédito o abono recibido", esCred:!esP});
+                      moneda:cur.moneda||"Lps",
+                      motivo:esP?"pago de tarjeta o traslado":"crédito o abono recibido",
+                      esCred:esCr, pagoTj:esP});
         }
       } else if(vs.length>=2){
         /* Débito y Crédito, en ese orden. Un débito de 0.00 con crédito no es gasto. */
         if(vs[0]>0.005) add(desc,vs[0]);
-        else if(vs[1]>0.005){ skip.cred++; fuera.push({fecha:cur.fecha,desc:desc,monto:vs[1],motivo:"crédito o abono recibido",esCred:true}); }
+        else if(vs[1]>0.005){ skip.cred++; fuera.push({fecha:cur.fecha,desc:desc,monto:vs[1],
+          moneda:cur.moneda||"Lps",motivo:"crédito o abono recibido",esCred:true}); }
       } else if(vs.length===1&&vs[0]>0.005) add(desc,vs[0]);
     }
     cur=null;
@@ -5164,8 +5289,10 @@ function qPasteVertical(lines){
     if(/^d[ée]bito$/i.test(l)){ cur.tipoHint="Egreso"; return; }
     if(/^cr[ée]dito$/i.test(l)){ cur.tipoHint="Ingreso"; return; }
     if(isRef(l)){ if(!cur.ref) cur.ref=l.replace(/[,\s]/g,""); return; }
-    var nv=numOf(l);
-    if(nv!=null){ var mo=qMoneda(l); if(mo!=="Lps") cur.moneda=mo; cur.nums.push({v:nv,raw:l,dec:qTieneDecimales(l)}); return; }
+    var nvS=qParseNum(l);
+    var nv=(nvS==null?null:Math.abs(nvS));
+    if(nv!=null){ var mo=qMoneda(l); if(mo!=="Lps") cur.moneda=mo;
+      cur.nums.push({v:nv,raw:l,dec:qTieneDecimales(l),neg:(nvS<-0.005)}); return; }
     if(!cur.desc&&/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(l)) cur.desc=l.replace(/\s{2,}/g," ").trim();
   });
   fin();
@@ -5621,10 +5748,10 @@ function bEstado(f){
   if(!(Math.abs(parseMonto(f.monto))>0)) falta.push("monto");
   if(B.tipo==="Egreso" && !f.pago) falta.push("forma de pago");
   if(falta.length) return {clase:"falta", txt:"falta "+falta.join(", "), ok:false};
-  if(f.repeFila) return {clase:"ojo", txt:"repetida: igual a la fila "+f.repeFila+" de este pegado", ok:true, repe:true,
+  if(f.repeFila && !f.noRepe) return {clase:"ojo", txt:"repetida: igual a la fila "+f.repeFila+" de este pegado", ok:true, repe:true,
     det:'<span class="sub">es igual a la fila '+f.repeFila+' de esta misma grilla</span>',
     tit:"Dentro de este mismo pegado hay otra fila con la misma fecha, el mismo importe y la misma descripción. Suele pasar cuando dos estados de cuenta se traslapan. Quitar una con la × o guardar las dos: la app no decide."};
-  if(f.repe){
+  if(f.repe && !f.noRepe){
     var casi=(f.repe.tipo==="parecida");
     return {clase:"ojo", ok:true, repe:true,
     /* CUÁL movimiento: sin esto había que adivinar contra qué la comparó */
@@ -5650,6 +5777,7 @@ function bEstado(f){
         ". Se busca en esta ventana y en la anterior porque algunos bancos no dicen a qué corte pertenece el cargo. "+
         "Quitar la fila con la × o guardarla igual: la app no decide."};
   }
+  if(f.noRepe) return {clase:"lista", txt:"lista", ok:true, noRepe:true};
   if(f.moneda&&f.moneda!=="Lps") return {clase:"ojo", txt:"origen "+f.moneda+" — sin tasa, convertir a mano", ok:true};
   if(f.origMon) return {clase:"lista", txt:f.origMon+" "+Math.abs(f.origVal).toFixed(2)+" × "+fmtTasa(f.tasa), ok:true, fx:true};
   return {clase:"lista", txt:"lista", ok:true};
@@ -5675,7 +5803,7 @@ function bRecalcula(f){
   f.marcar=!!(f.permSel && f.permSel!=="__nuevo");
   f.nuevoPerm=(f.permSel==="__nuevo");
   if(!f.marcar) f.autoMarcada=false;
-  f.repe=bRepetida(f);
+  f.repe=f.noRepe? null : bRepetida(f);
   if(!f.catManual){
     var s=sugerirCat(f);
     if(s){ f.cat=s.cat; f.catAuto=s; } else if(f.catAuto){ f.cat=""; f.catAuto=null; }
@@ -5731,7 +5859,11 @@ function pintaPegado(){
 }
 function pintaPegado0(){
   bAsegura();
-  abreModal('<div class="mh"><h3>Pegar en bloque</h3><div class="sp"></div><button class="icb" data-acc="cerrar">×</button></div>'+
+  abreModal('<div class="mh"><h3>Pegar en bloque</h3>'+
+      '<span class="vent" title="'+esc("Todo lo que se guarde desde acá cae en esta ventana. Se cambia con el selector de la cabecera, antes de guardar.")+'">'+
+      esc(S.ui.per+" "+S.ui.anio)+'</span>'+
+      '<span id="bChipCred"></span>'+
+      '<div class="sp"></div><button class="icb" data-acc="cerrar">×</button></div>'+
     '<div class="mb" data-t="modalPegado" style="padding-top:12px">'+
       '<div class="barra-h" title="Pegar el estado de cuenta dentro de cualquier celda: se reparten fecha, descripción y monto. '+
         'Quedan fuera referencias, saldos, pagos de tarjeta y créditos. Ninguna casilla de permanente se marca de forma automática.">'+
@@ -5882,7 +6014,13 @@ function bSugHTML(f){
    encontró — comercio, importe, forma de pago — y no hay que adivinar cuál es. */
 function bEstadoHTML(e){
   return '<span class="est '+e.clase+'"'+(e.tit?' title="'+esc(e.tit)+'"':'')+'>'+esc(e.txt)+'</span>'+
-    (e.det? '<div class="est-det">'+e.det+'</div>' : '');
+    (e.det? '<div class="est-det">'+e.det+'</div>' : '')+
+    (e.repe? '<div style="margin-top:3px"><button class="ln" style="font-size:10.5px" '+
+      'data-acc="b-nodup" title="'+esc(
+        "Descartar el aviso: esta fila no es un duplicado. Se guarda como un gasto independiente y no vuelve a marcarse en rojo, ni acá ni en Movimientos.")+
+      '">no es duplicado</button></div>' : '')+
+    (e.noRepe? '<div class="est-det"><button class="ln" style="font-size:10.5px" data-acc="b-sidup" title="'+esc(
+        "Volver a comparar esta fila contra los movimientos ya registrados.")+'">volver a comparar</button></div>' : '');
 }
 function detMov(m,k){
   if(!m) return "";
@@ -5971,35 +6109,49 @@ function bResumen(){
      como INGRESO en dos clics. Nada se registra solo: arrancan desmarcados. */
   var creds=B.fuera.filter(function(x){ return x.esCred; });
   if(creds.length){
-    var totC=0; creds.forEach(function(x){ totC+=cts(x.monto); });
+    var totC=0; creds.forEach(function(x){
+      var mo=x.moneda||"Lps", t=(mo==="Lps"?1:fxTasa(mo));
+      totC+=cts(Math.abs(+x.monto||0)*(t||1)); });
     var nSel=creds.filter(function(x){ return x.tomar; }).length;
     html+='<div class="avi" data-t="avisoCreditos" style="margin-top:9px">'+
       'El pegado trae <b>'+creds.length+'</b> crédito'+(creds.length===1?"":"s")+' por <b>'+fmt(totC/100)+
-      '</b> — devoluciones, reversiones o abonos. <b>No son gastos</b>, así que no entraron a la grilla. '+
-      'Si corresponden, se registran como ingreso de esta ventana y bajan el gasto neto.'+
+      '</b> — devoluciones, reversiones, abonos y pagos de tarjeta. <b>No son gastos</b>, así que no '+
+      'entraron a la grilla. Cada uno se registra como vos digas, o se deja fuera sin marcarlo:'+
+      '<div class="sub" style="margin:4px 0 2px">'+
+        '<b>descuento de la tarjeta</b> — se guarda como un egreso negativo con esa forma de pago, '+
+        'así baja lo que esa tarjeta debe en este corte. Es lo que corresponde a una devolución o a un traslado.<br>'+
+        '<b>ingreso</b> — plata que entró de verdad y no pertenece a ninguna tarjeta.</div>'+
       '<div class="tabla-cont" style="margin-top:8px;max-height:34vh"><table data-t="tablaCreditos"><thead><tr>'+
         '<th class="plano" style="width:30px"></th>'+
         '<th class="plano" style="width:92px">Fecha</th>'+
         '<th class="plano">Descripción</th>'+
         '<th class="plano der" style="width:104px">Monto</th>'+
-        '<th class="plano" style="width:190px">Rubro de ingreso</th>'+
+        '<th class="plano" style="width:178px" title="Descuento de la tarjeta = egreso negativo con esa forma de pago, baja lo que ese plástico debe. Ingreso = plata que entró y no pertenece a ninguna tarjeta.">Registrar como</th>'+
+        '<th class="plano" style="width:180px">Rubro</th>'+
         '<th class="plano" style="width:170px">Forma de pago</th>'+
       '</tr></thead><tbody>'+
       creds.map(function(x,i){
+        var esDesc=(x.como!=="ing");
         return '<tr class="cred-fila" data-cr="'+i+'">'+
           '<td style="text-align:center"><input type="checkbox" data-crc="tomar"'+(x.tomar?" checked":"")+
-            ' title="Marcalo si este crédito sí corresponde registrarlo como ingreso."></td>'+
+            ' title="Marcalo si este crédito sí corresponde registrarlo. Sin marcar, se queda fuera."></td>'+
           '<td class="sub" style="white-space:nowrap;padding:6px 8px">'+esc(fmtF(x.fecha))+'</td>'+
-          '<td style="padding:6px 8px">'+esc(x.desc||"(sin descripción)")+'</td>'+
-          '<td class="num" style="padding:6px 8px">'+fmt(x.monto)+'</td>'+
-          '<td><select class="cel" data-crc="cat">'+opciones(S.catI,x.cat||"",true)+'</select></td>'+
+          '<td style="padding:6px 8px">'+esc(x.desc||"(sin descripción)")+
+            (x.pagoTj?'<div class="sub" style="font-size:10.5px;color:var(--avi-tx)" title="'+esc(
+              "Por el texto parece el pago del corte de la tarjeta, no una devolución. Registrarlo contaría dos veces el mismo dinero: lo normal es dejarlo sin marcar.")+
+              '">parece un pago de tarjeta &middot; normalmente se deja fuera</div>':'')+'</td>'+
+          '<td class="num" style="padding:6px 8px">'+credMonHTML(x)+'</td>'+
+          '<td><select class="cel" data-crc="como">'+
+            '<option value="desc"'+(esDesc?" selected":"")+'>descuento de la tarjeta</option>'+
+            '<option value="ing"'+(esDesc?"":" selected")+'>ingreso</option></select></td>'+
+          '<td><select class="cel" data-crc="cat">'+opciones(esDesc?S.catE:S.catI,x.cat||"",true)+'</select></td>'+
           '<td><select class="cel" data-crc="pago">'+opciones(S.formas,(x.pago||B.pago||""),true)+'</select></td>'+
         '</tr>';
       }).join("")+'</tbody></table></div>'+
       '<div class="barra-h" style="margin-top:9px">'+
       '<button class="btn gh peq" data-acc="cred-todos">'+(nSel===creds.length?"Desmarcar todos":"Marcar todos")+'</button>'+
       '<button class="btn peq" data-acc="cred-guardar"'+(nSel?"":" disabled style=\"opacity:.5\"")+'>'+
-        'Registrar '+(nSel?nSel:"")+' como ingreso</button>'+
+        'Registrar '+(nSel?nSel:"")+'</button>'+
       '<span class="sub">se guardan de una vez, sin pasar por la grilla</span></div></div>';
   }
   if(B.fuera.length){
@@ -6019,8 +6171,28 @@ function bResumen(){
   html+='</div>';
   var r=$("#bResumen");
   if(r) r.innerHTML=html;
+  /* Un aviso arriba, en la cabecera del modal: el panel de créditos vive debajo
+     de la grilla y sin esto había que bajar para enterarse de que existe. */
+  var ch=$("#bChipCred");
+  if(ch){
+    var cs2=B.fuera.filter(function(x){ return x.esCred; });
+    ch.innerHTML=cs2.length? '<button class="chip avi" data-acc="cred-ver" title="'+esc(
+      "El pegado trae créditos: devoluciones, abonos o pagos de tarjeta. No entran a la grilla. Clic para ir a la lista y decidir uno por uno.")+
+      '" style="cursor:pointer;margin-left:8px">'+cs2.length+' crédito'+(cs2.length===1?"":"s")+' &middot; ver</button>' : "";
+  }
   var bg=document.querySelector('[data-t="btnGuardarBloque"]');
   if(bg){ bg.textContent=listas?("Guardar "+listas+" fila"+(listas===1?"":"s")):"Guardar"; bg.disabled=!listas; bg.style.opacity=listas?"":".5"; }
+}
+/* El importe de un crédito, ya en lempiras, con el original debajo si venía en
+   otra moneda. Se convierte al capturar, no al mostrar. */
+function credMonHTML(x){
+  var mo=x.moneda||"Lps", v=Math.abs(+x.monto||0);
+  if(mo==="Lps") return fmt(v);
+  var t=fxTasa(mo);
+  if(!t) return '<span class="tx-mal">'+fmt(v)+' '+esc(mo)+'</span>'+
+    '<div class="sub" style="font-size:10.5px">sin tasa de '+esc(mo)+'</div>';
+  return fmt(red(v*t))+'<div class="sub" style="font-size:10.5px">'+
+    esc(mo)+' '+v.toFixed(2)+' × '+fmtTasa(t)+'</div>';
 }
 /* Registra los créditos marcados como INGRESO de la ventana activa. Van derecho
    a movimientos —que es lo único que es dinero— y quedan en la bitácora, así que
@@ -6031,21 +6203,40 @@ function credGuardar(){
   var k=kAct(), sel=B.fuera.filter(function(x){ return x.esCred && x.tomar; });
   if(!sel.length){ toast("Ninguno marcado."); return; }
   var sinCat=sel.filter(function(x){ return !x.cat; });
-  if(sinCat.length){ toast("Falta el rubro de ingreso en "+sinCat.length+" crédito(s)",5000); return; }
-  var nuevos=[];
+  if(sinCat.length){ toast("Falta el rubro en "+sinCat.length+" crédito(s)",5000); return; }
+  var sinPago=sel.filter(function(x){ return x.como!=="ing" && !(x.pago||B.pago); });
+  if(sinPago.length){ toast("Un descuento de tarjeta necesita saber de qué tarjeta &middot; falta en "+
+    sinPago.length+" crédito(s)",6000); return; }
+  /* Otra moneda sin tasa: no se inventa el importe. Se avisa y no se guarda nada. */
+  var sinTasa=sel.filter(function(x){ var mo=x.moneda||"Lps"; return mo!=="Lps" && !fxTasa(mo); });
+  if(sinTasa.length){ toast("No tengo la tasa de "+sinTasa[0].moneda+" &middot; "+
+    sinTasa.length+" crédito(s) en otra moneda sin convertir",6000); return; }
+  var nuevos=[], nDesc=0, nIng=0;
   sel.forEach(function(x){
-    var mv={id:id(), k:k, fecha:x.fecha||hoyISO(), tipo:"Ingreso",
-            desc:String(x.desc||"").trim(), monto:red(Math.abs(+x.monto||0)),
-            cat:x.cat, pago:x.pago||B.pago||"", motivo:"crédito del estado de cuenta",
-            fx:"", permId:null, origen:"credito"};
+    var ing=(x.como==="ing"), oV=Math.abs(+x.monto||0);
+    /* La conversión se hace AL CAPTURAR, igual que en la grilla: el movimiento
+       queda en lempiras y el estado deja anotado el importe original y la tasa. */
+    var mo=x.moneda||"Lps", tsa=fxTasa(mo), m0=red(mo==="Lps"? oV : oV*tsa);
+    /* Descuento de tarjeta = egreso NEGATIVO con esa forma de pago: baja lo que
+       ese plástico debe en el corte, en vez de inflar los ingresos. */
+    var mv={id:id(), k:k, fecha:x.fecha||hoyISO(), tipo:ing?"Ingreso":"Egreso",
+            desc:String(x.desc||"").trim(), monto:ing? m0 : red(-m0),
+            cat:x.cat, pago:x.pago||B.pago||"",
+            motivo:ing? "crédito del estado de cuenta" : "descuento del estado de cuenta",
+            fx:(mo==="Lps"? "" : mo+" "+oV.toFixed(2)+" @ "+fmtTasa(tsa)),
+            permId:null, origen:"credito"};
+    if(ing) nIng++; else nDesc++;
     S.movimientos.push(mv); nuevos.push(mv);
   });
-  anota("credito","Créditos del pegado registrados como ingreso", nuevos, []);
+  anota("credito","Créditos del pegado"+(nDesc?" · "+nDesc+" como descuento de tarjeta":"")+
+        (nIng?" · "+nIng+" como ingreso":""), nuevos, []);
   B.fuera=B.fuera.filter(function(x){ return !(x.esCred && x.tomar); });
   guardar(); render(); pintaPegado();
-  var tot=0; nuevos.forEach(function(m){ tot+=cts(m.monto); });
+  var tot=0; nuevos.forEach(function(m){ tot+=Math.abs(cts(m.monto)); });
   toast(nuevos.length+" crédito"+(nuevos.length===1?"":"s")+" registrado"+(nuevos.length===1?"":"s")+
-        " como ingreso &middot; "+fmt(tot/100)+" &middot; revertible desde la bitácora",6000);
+        (nDesc?" &middot; "+nDesc+" como descuento de tarjeta":"")+
+        (nIng?" &middot; "+nIng+" como ingreso":"")+
+        " &middot; "+fmt(tot/100)+" &middot; revertible desde la bitácora",6500);
 }
 function bGuardar(){
   var k=kAct(), guardadas=0, reemplazos=0, ligados=0, sinLigar=0, altas=0, quedan=[], tocados=[];
@@ -6058,6 +6249,8 @@ function bGuardar(){
             monto:parseMonto(f.monto), cat:f.cat||"", pago:f.pago||"", motivo:String(f.motivo||"").trim(),
             fx:(f.origMon? f.origMon+" "+Math.abs(f.origVal).toFixed(2)+" @ "+fmtTasa(f.tasa) : ""),
             permId:null, origen:"bloque"};
+    /* si descartó el aviso en la grilla, el movimiento nace ya descartado */
+    if(f.noRepe) mv.noDup=true;
     var pEleg=(f.marcar? permsK(k).filter(function(x){ return x.id===f.permSel; })[0] : null);
     if(pEleg){                                    /* SOLO el permanente que él eligió */
       var p=pEleg, ya=movDePerm(k,p.id);

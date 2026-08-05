@@ -262,6 +262,22 @@ tr.lista td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
 /* el movimiento concreto contra el que se comparó, debajo del estado */
 .est-det{font-size:10.5px;line-height:1.35;margin-top:3px;color:var(--tx2)}
 .est-det b{font-weight:650}
+/* ── cierres · mosaico ───────────────────────────────────────────── */
+.cie-fila td{cursor:pointer}
+.cie-fila.on td{background:var(--card2)}
+.cie-fl{color:var(--tx3);font-size:11px}
+.cie-abre td{background:var(--card2);border-top:0}
+.mos{position:relative;width:100%;height:340px;border-radius:6px;overflow:hidden;background:var(--linea3)}
+.mos-b{position:absolute;border:0;padding:6px 8px;cursor:pointer;overflow:hidden;text-align:left;
+  display:flex;flex-direction:column;justify-content:flex-start;gap:1px;
+  box-shadow:inset 0 0 0 1px var(--card2);border-radius:3px;transition:filter .12s}
+.mos-b:hover{filter:brightness(1.07)}
+.mos-b.on{box-shadow:inset 0 0 0 2px var(--tx)}
+.mos-n{font-size:11.5px;font-weight:650;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.mos-v{font-size:11px;font-variant-numeric:tabular-nums;opacity:.92}
+.mos-p{font-size:10.5px;opacity:.78;margin-top:auto}
+.mos-det{margin-top:10px;border:1px solid var(--linea);border-radius:6px;padding:9px 10px;background:var(--card)}
+@media (max-width:900px){ .mos{height:260px} }
 .est.lista{color:var(--ok-tx)}
 .est.falta{color:var(--avi-tx);font-weight:600}
 .est.ojo{color:var(--avi-tx)}
@@ -756,6 +772,7 @@ function estadoVacio(){
     ui:{tab:"hoy",anio:null,per:null,
         ordMov:{k:"fecha",dir:-1}, ordRub:{k:"queda",dir:-1},
         ordPerm:{k:"desc",dir:1}, ordPermI:{k:"desc",dir:1}, ordHoy:{k:"queda",dir:1}, busca:"",
+        cieAb:"", cieRub:"",
         prSim:{}, prTabla:null, prDatos:null},
     ventanas:[], formas:[], catE:[], catI:[], catIcons:{}, tarjetas:[], tjPref:{}, tjPago:{},
     permanentes:[], perms:{}, alias:{}, movimientos:[], presu:{}, cuento:{}, prefs:{}, prestamos:[], bitacora:[],
@@ -1991,6 +2008,105 @@ function panelRubrosHoy(k){
     }).join("")+'</tbody></table></div></div>';
 }
 
+/* ---------------- MOSAICO DE RUBROS ----------------
+   El área de cada bloque es su parte del gasto real de la ventana. El color no
+   dice nada nuevo: es la misma tonalidad, más oscura mientras más grande, para
+   separar bloques vecinos sin convertir la pantalla en un arcoíris. Entre
+   bloques queda un hueco de 2px, que es lo que de verdad los separa.
+   Todo sale de los movimientos; no hay ningún dato guardado detrás. */
+var MOS_TONOS=["#14447f","#1c5cab","#2a78d6","#5f99e1","#8ab6ec","#b3d0f3","#d3e4f9","#eaf2fc"];
+var MOS_MAX=8;                                  /* del noveno en adelante, «Otros rubros» */
+function mosaicoDatos(k){
+  var m={}, ca=catAhorro();
+  movsDe(k).forEach(function(x){
+    if(x.tipo==="Ingreso") return;
+    var c=x.cat||"Sin categoría";
+    m[c]=(m[c]||0)+cts(x.monto);
+  });
+  var arr=[];
+  Object.keys(m).forEach(function(c){ arr.push({cat:c, cts:m[c]}); });
+  var favor=arr.filter(function(x){ return x.cts<0; });
+  arr=arr.filter(function(x){ return x.cts>0; }).sort(function(a,b){ return b.cts-a.cts; });
+  var vis=arr.slice(0,MOS_MAX), resto=arr.slice(MOS_MAX);
+  if(resto.length){
+    var s=0; resto.forEach(function(x){ s+=x.cts; });
+    vis.push({cat:"Otros rubros", cts:s, grupo:resto.map(function(x){ return x.cat; })});
+  }
+  var tot=0; vis.forEach(function(x){ tot+=x.cts; });
+  return {bloques:vis, total:tot, favor:favor, ahorro:ca};
+}
+/* Partición binaria por mitades: parte la lista donde la suma se acerca más a la
+   mitad y corta el rectángulo por su lado largo. Da bloques de proporciones
+   razonables sin necesidad de una librería. */
+function mosaicoCorta(vals,x,y,w,h,out){
+  if(!vals.length) return;
+  if(vals.length===1){ out.push({i:vals[0].i,x:x,y:y,w:w,h:h}); return; }
+  var total=0; vals.forEach(function(v){ total+=v.a; });
+  if(total<=0) return;
+  var acc=0, k=1, mejor=Infinity, mitad=total/2;
+  for(var j=0;j<vals.length-1;j++){
+    acc+=vals[j].a;
+    var d=Math.abs(acc-mitad);
+    if(d<mejor){ mejor=d; k=j+1; }
+  }
+  var sa=0; for(var m2=0;m2<k;m2++) sa+=vals[m2].a;
+  var f=sa/total;
+  if(w>=h){ mosaicoCorta(vals.slice(0,k),x,y,w*f,h,out);
+            mosaicoCorta(vals.slice(k),x+w*f,y,w*(1-f),h,out); }
+  else    { mosaicoCorta(vals.slice(0,k),x,y,w,h*f,out);
+            mosaicoCorta(vals.slice(k),x,y+h*f,w,h*(1-f),out); }
+}
+function mosaicoHTML(k){
+  var d=mosaicoDatos(k);
+  if(!d.bloques.length) return '<div class="vacio" style="padding:18px">Esta ventana no tiene gastos registrados.</div>';
+  var vals=d.bloques.map(function(b,i){ return {i:i, a:b.cts}; });
+  var pos=[]; mosaicoCorta(vals,0,0,100,100,pos);
+  var sel=S.ui.cieRub||"";
+  var html='<div class="mos" data-t="mosaico">'+pos.map(function(p){
+    var b=d.bloques[p.i], pct=d.total? (b.cts/d.total*100) : 0;
+    var tono=MOS_TONOS[Math.min(p.i,MOS_TONOS.length-1)];
+    var claro=(p.i>=4);
+    var chico=(p.w<11||p.h<9);
+    var esSel=(sel===b.cat);
+    return '<button class="mos-b'+(esSel?" on":"")+'" data-mos="'+esc(b.cat)+'" '+
+      'style="left:'+p.x.toFixed(3)+'%;top:'+p.y.toFixed(3)+'%;width:'+p.w.toFixed(3)+'%;height:'+p.h.toFixed(3)+'%;'+
+        'background:'+tono+';color:'+(claro?"var(--tx)":"#fff")+'" '+
+      'title="'+esc(b.cat+" · "+fmt(b.cts/100)+" · "+pct.toFixed(1)+"% del gasto de la ventana"+
+        (b.grupo?" · agrupa "+b.grupo.length+" rubros: "+b.grupo.join(", "):"")+
+        " · clic para ver sus movimientos")+'">'+
+      (chico?'':'<span class="mos-n">'+esc(b.cat)+'</span><span class="mos-v">'+fmt(b.cts/100)+'</span>'+
+              (p.h>18?'<span class="mos-p">'+pct.toFixed(0)+'%</span>':''))+
+    '</button>';
+  }).join("")+'</div>';
+  if(d.favor.length){
+    var sf=0; d.favor.forEach(function(x){ sf+=x.cts; });
+    html+='<div class="sub" style="margin-top:7px;font-size:12px" title="'+esc(
+      "Rubros cuyo saldo de la ventana quedó a favor: las devoluciones superan a los cargos. No se pueden dibujar en el mosaico porque no ocupan área de gasto.")+'">'+
+      d.favor.length+' rubro'+(d.favor.length===1?"":"s")+' quedó a favor &middot; '+fmt(sf/100)+
+      ' &middot; '+d.favor.map(function(x){ return esc(x.cat); }).join(", ")+'</div>';
+  }
+  return html;
+}
+function movsRubroHTML(k,cat){
+  var ms=movsDe(k).filter(function(m){ return m.tipo!=="Ingreso" && (m.cat||"Sin categoría")===cat; })
+                  .sort(function(a,b){ return cts(b.monto)-cts(a.monto); });
+  if(!ms.length) return "";
+  var t=0; ms.forEach(function(m){ t+=cts(m.monto); });
+  return '<div class="mos-det" data-t="mosDetalle">'+
+    '<div class="barra-h" style="margin-bottom:6px">'+
+      '<b>'+esc(cat)+'</b><span class="sub">'+ms.length+' movimiento'+(ms.length===1?"":"s")+'</span>'+
+      '<div class="sp"></div><b style="font-variant-numeric:tabular-nums">'+fmt(t/100)+'</b>'+
+      '<button class="borrar" data-acc="mos-cerrar" title="Cerrar el detalle">×</button></div>'+
+    '<div class="tabla-cont" style="max-height:38vh"><table><tbody>'+
+    ms.map(function(m){
+      return '<tr><td class="sub" style="width:96px;white-space:nowrap;padding:5px 8px">'+esc(fmtF(m.fecha))+'</td>'+
+        '<td style="padding:5px 8px">'+esc(m.desc||"(sin descripción)")+
+          (m.motivo?' <span class="sub">&middot; '+esc(m.motivo)+'</span>':'')+'</td>'+
+        '<td class="sub" style="width:150px;padding:5px 8px">'+esc(m.pago||"")+'</td>'+
+        '<td class="num" style="width:118px;padding:5px 8px">'+fmt(m.monto)+'</td></tr>';
+    }).join("")+'</tbody></table></div></div>';
+}
+
 /* ---------------- PANTALLA · CIERRES ----------------
    Una fila por ventana, de la más nueva a la más vieja. Todo sale de los
    movimientos y del presupuesto de cada ventana: no se guarda ningún cierre,
@@ -2024,9 +2140,10 @@ function vistaCierres(){
       '<th class="der" style="width:14%" title="'+esc("Lo apartado al rubro «"+ca+"» más lo que sobró de todo lo demás (ingresos − gastos reales). Es el ahorro de verdad de esa ventana, y solo se sabe cuando la ventana ya pasó.")+'">Ahorro real</th>'+
     '</tr></thead><tbody>'+
     f.map(function(c){
-      var neg=c.ahorroReal<0, esAct=(c.k===kA);
-      return '<tr data-cie="'+esc(c.k)+'"'+(esAct?' style="background:var(--plan-bg)"':'')+'>'+
-        '<td style="padding:7px 8px">'+esc(nomVentana(c.k))+
+      var neg=c.ahorroReal<0, esAct=(c.k===kA), ab=(S.ui.cieAb===c.k);
+      return '<tr class="cie-fila'+(ab?" on":"")+'" data-cie="'+esc(c.k)+'"'+(esAct?' style="background:var(--plan-bg)"':'')+'>'+
+        '<td style="padding:7px 8px">'+
+          '<span class="cie-fl">'+(ab?"▾":"▸")+'</span> '+esc(nomVentana(c.k))+
           (esAct?' <span class="chip" title="Es la ventana que estás viendo en el resto de la app. Todavía puede cambiar.">en curso</span>':'')+
           '<div class="sub" style="font-size:11px">'+c.n+' movimiento'+(c.n===1?"":"s")+'</div></td>'+
         '<td class="num">'+fmt(c.ing)+'</td>'+
@@ -2037,7 +2154,14 @@ function vistaCierres(){
             :'<span class="sub">—</span>')+'</td>'+
         '<td class="num">'+(c.apartado?fmt(c.apartado):'<span class="sub">—</span>')+'</td>'+
         '<td class="num" style="font-weight:650;color:'+(neg?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(c.ahorroReal,true)+'</td>'+
-      '</tr>';
+      '</tr>'+
+      (ab? '<tr class="cie-abre" data-cieab="'+esc(c.k)+'"><td colspan="7" style="padding:10px 10px 14px">'+
+             '<div class="sub" style="margin-bottom:7px" title="'+esc(
+               "El área de cada bloque es su parte del gasto real de esta ventana. Clic en un bloque para ver sus movimientos.")+'">'+
+             'En qué se fue el gasto de '+esc(nomVentana(c.k))+' &middot; clic en un bloque para el detalle</div>'+
+             mosaicoHTML(c.k)+
+             (S.ui.cieRub? movsRubroHTML(c.k,S.ui.cieRub) : '')+
+           '</td></tr>' : '');
     }).join("")+'</tbody></table></div>'+
     '<div class="sub" style="margin-top:9px;font-size:12.5px">'+
       'Ahorro real = apartado en <b>'+esc(ca)+'</b> + sobrante (ingresos − gastos reales). '+
@@ -3827,7 +3951,21 @@ function heredarAhora(tipo){
    EVENTOS
 ============================================================================= */
 document.addEventListener("click", function(ev){
-  var t=ev.target, b=t.closest?t.closest("[data-acc],[data-desg],[data-ord],[data-ordr],[data-ordp],[data-ordpi],[data-ordh],[data-tab],[data-ajt]"):null;
+  var t=ev.target, b=t.closest?t.closest("[data-acc],[data-desg],[data-mos],[data-ord],[data-ordr],[data-ordp],[data-ordpi],[data-ordh],[data-tab],[data-ajt]"):null;
+  /* mosaico: un bloque abre o cierra el detalle de ese rubro */
+  if(b && b.hasAttribute && b.hasAttribute("data-mos")){
+    var mc=b.getAttribute("data-mos");
+    S.ui.cieRub=(S.ui.cieRub===mc)?"":mc;
+    guardar(); render(); return;
+  }
+  /* una fila de cierres se despliega; al cambiar de ventana el detalle se cierra */
+  var trC=t.closest?t.closest("tr.cie-fila"):null;
+  if(trC){
+    var kc=trC.getAttribute("data-cie");
+    if(S.ui.cieAb===kc){ S.ui.cieAb=""; S.ui.cieRub=""; }
+    else { S.ui.cieAb=kc; S.ui.cieRub=""; }
+    guardar(); render(); return;
+  }
 
   if(t.matches&&t.matches("[data-velo]")){ if(puedeCerrar()){ cierraTodo(); render(); } return; }
   if(!b) return;
@@ -3941,6 +4079,7 @@ document.addEventListener("click", function(ev){
   if(acc==="exportar"){ exportar(); return; }
   if(acc==="bloquear"){ bloquearApp(); return; }
   if(acc==="nube-check"){ nubeVerificar(); return; }
+  if(acc==="mos-cerrar"){ S.ui.cieRub=""; guardar(); render(); return; }
   /* --- tarjetas (libreta de referencia; no toca ningún número) --- */
   if(acc==="tj-nueva"){ S.tarjetas.push(tarjetaVacia()); guardar(); reTarjetas(true); return; }
   if(acc==="tj-borrar"){

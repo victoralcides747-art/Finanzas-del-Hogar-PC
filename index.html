@@ -327,6 +327,7 @@ tr.pinta.dupe td{background:var(--mal-bg)}
 .ft:hover{background:var(--linea2)}
 .ft.on{background:var(--plan-bg);color:var(--plan-tx);font-weight:650}
 .tj-col{width:26px;height:18px;border-radius:4px;border:1px solid var(--linea);display:inline-block;vertical-align:middle}
+.tj-avi{font-size:10.5px;line-height:1.35;margin:2px 0 0 8px;color:var(--avi-tx)}
 .pbt.reemb{border-color:var(--avi-linea);background:var(--avi-bg);color:var(--avi-tx);opacity:1}
 .pbt.reemb.ok{border-color:var(--ok-bg);background:var(--ok-bg);color:var(--ok-tx)}
 tr:hover .pbt.reemb{border-color:var(--avi-linea)}
@@ -627,10 +628,41 @@ function colorDe(v){
   var c=TJ_COLORES.filter(function(x){ return x.v===v; })[0];
   return c? c.bg : "";
 }
+/* El nombre de la tarjeta en la libreta y el de la forma de pago del movimiento
+   casi nunca son idénticos: «EconoMia» contra «EconoMia BAC», «Promérica» contra
+   «Promerica». Se busca primero la coincidencia exacta y, si no la hay, la más
+   específica que contenga a la otra, comparando sin acentos ni espacios. */
+function tjNorm(s){ return tjClave(s).replace(/[\s.]+/g,""); }
+function colorPago(pago){
+  var C=tjColor(), p=String(pago||"");
+  if(!p) return "";
+  if(C[p]) return colorDe(C[p]);
+  var n=tjNorm(p), mejor="", largo=-1;
+  Object.keys(C).forEach(function(nm){
+    var q=tjNorm(nm);
+    if(!q || !C[nm]) return;
+    if(n.indexOf(q)>=0 || q.indexOf(n)>=0){
+      if(q.length>largo){ largo=q.length; mejor=nm; }
+    }
+  });
+  return mejor? colorDe(C[mejor]) : "";
+}
+/* ¿Con qué forma de pago se cruza esta tarjeta? Sirve para avisarle cuando el
+   nombre de la libreta no coincide con ninguna forma y nada se va a pintar. */
+function formaDeTarjeta(nombre){
+  var p=String(nombre||""); if(!p) return null;
+  if((S.formas||[]).indexOf(p)>=0) return {forma:p, exacta:true};
+  var n=tjNorm(p), mejor=null, largo=-1;
+  (S.formas||[]).forEach(function(f){
+    var q=tjNorm(f); if(!q) return;
+    if(n.indexOf(q)>=0 || q.indexOf(n)>=0){ if(q.length>largo){ largo=q.length; mejor=f; } }
+  });
+  return mejor? {forma:mejor, exacta:false} : null;
+}
 function fondoMov(m){
   if(!m) return "";
   if(m.tipo==="Ingreso") return TJ_COLOR_ING;
-  return colorDe(tjColor()[m.pago||""]);
+  return colorPago(m.pago);
 }
 function tarjetaDe(tid){ return (S.tarjetas||[]).filter(function(t){ return t.id===tid; })[0]||null; }
 function diaTxt(n){ return (n===0||n)?String(n):"—"; }
@@ -3427,9 +3459,19 @@ function abreAjustes(seccion){
         '<th class="plano" style="width:34px"></th>'+
       '</tr></thead><tbody>'+
       ((S.tarjetas||[]).length? S.tarjetas.map(function(t){
+        var fq=formaDeTarjeta(t.nombre);
+        var avisoF = !t.nombre? ""
+          : (!fq? '<div class="sub tj-avi" title="'+esc(
+                "Ninguna forma de pago se parece a este nombre, así que los movimientos no se pueden cruzar con esta tarjeta: no se van a pintar de su color. Escribí acá el mismo texto que usás en la forma de pago.")+
+              '">no coincide con ninguna forma de pago</div>'
+            : (fq.exacta? "" :
+              '<div class="sub tj-avi" title="'+esc(
+                "El nombre no es idéntico al de la forma de pago, pero se parece lo suficiente para cruzarlos. Si querés que calce exacto, adoptá el nombre de la forma.")+
+              '">se cruza con <b>'+esc(fq.forma)+'</b> '+
+              '<button class="ln" data-acc="tj-adoptar" data-forma="'+esc(fq.forma)+'">usar ese nombre</button></div>'));
         return '<tr class="tj-fila" data-tj="'+esc(t.id)+'">'+
           '<td><input class="cel" data-tc="nombre" value="'+esc(t.nombre)+'" placeholder="nombre" '+
-            'title="Conviene que coincida exactamente con la forma de pago, para poder cruzar los movimientos con esta tarjeta."></td>'+
+              'title="Conviene que coincida exactamente con la forma de pago, para poder cruzar los movimientos con esta tarjeta.">'+avisoF+'</td>'+
           '<td class="tj-cen"><input class="cel" data-tc="corte" value="'+esc(diaTxt(t.corte)==="—"?"":t.corte)+'" placeholder="—"></td>'+
           '<td class="tj-cen"><input class="cel" data-tc="pago" value="'+esc(diaTxt(t.pago)==="—"?"":t.pago)+'" placeholder="—"></td>'+
           '<td class="tj-cen"><div class="tj-lim">'+
@@ -4172,6 +4214,20 @@ document.addEventListener("click", function(ev){
     var tj3=tarjetaDe(tr3.getAttribute("data-tj")); if(!tj3) return;
     tj3.benes.splice(+bd.getAttribute("data-bj"),1);
     guardar(); reTarjetas(); return;
+  }
+  if(acc==="tj-adoptar"){
+    var trA=b.closest("tr[data-tj]"); if(!trA) return;
+    var tjA=tarjetaDe(trA.getAttribute("data-tj")); if(!tjA) return;
+    var nf=b.getAttribute("data-forma"), viejo=tjA.nombre;
+    if(!nf || nf===viejo) return;
+    tjA.nombre=nf;
+    /* lo que se guarda por nombre sigue a la tarjeta */
+    for(var kp2 in S.tjPago) if(S.tjPago[kp2][viejo]){ S.tjPago[kp2][nf]=true; delete S.tjPago[kp2][viejo]; }
+    var P3=tjPref(); for(var rp2 in P3) if(P3[rp2]===viejo) P3[rp2]=nf;
+    var C3=tjColor(); if(C3[viejo]){ C3[nf]=C3[viejo]; delete C3[viejo]; }
+    guardar(); reTarjetas();
+    toast("Renombrada a «"+nf+"» &middot; ahora calza exacto con la forma de pago",5000);
+    return;
   }
   if(acc==="tjpref-nuevo"){
     var libre=(S.catE||[]).filter(function(r){ return !(r in tjPref()); })[0];
@@ -5216,9 +5272,13 @@ function diasEntre(a,b){
 
    Ninguno de los dos borra nada: se señala y él decide.
 ========================================================================= */
-var DIAS_REPE_CASI=2;      /* días admitidos cuando el texto no es idéntico */
+/* Los cargos "flotantes" de algunas bancas entran con la fecha de la compra y
+   después pasan a movimientos con la fecha en que se aplicaron. Entre una y otra
+   pueden pasar varios días, así que la ventana no puede ser de dos. */
+var DIAS_REPE_CASI=6;      /* días admitidos cuando el texto no es idéntico */
 var TOL_REPE=10;           /* lempiras de diferencia admitidos en ese caso */
 var SIM_REPE=0.6;          /* cuánto parecido de texto hace falta */
+var SIM_REPE_FUERTE=0.85;  /* el que hace falta si además cambia la forma de pago */
 /* Parecido entre dos descripciones de banco. La raíz les quita cuotas,
    referencias y números sueltos; los tokens, las palabras de relleno (ciudad,
    país, "COMPRA", "SUC"). Que una contenga a la otra pesa mucho: es justo lo
@@ -5241,12 +5301,18 @@ function repeCompara(f,m){
   if(v0===v1 && c0===c1) return (d<=DIAS_REPE)? {tipo:"exacta", dias:d, sim:1, dif:0} : null;
   if(d>DIAS_REPE_CASI) return null;
   if(Math.abs(v0-v1)>cts(TOL_REPE)) return null;
-  /* la tarjeta tiene que calzar: el mismo gasto no se paga con dos plásticos.
-     Si alguno de los dos no la tiene puesta, no cuenta ni a favor ni en contra. */
-  if(pagoCoincide({pago:m.pago},{pago:f.pago})===-1) return null;
   var sim=simRepe(f.desc,m.desc);
   if(sim<SIM_REPE) return null;
-  return {tipo:"parecida", dias:d, sim:sim, dif:red((v0-v1)/100)};
+  /* La tarjeta normalmente tiene que calzar: el mismo gasto no se paga con dos
+     plásticos. Pero al pegar en bloque la forma de pago la pone el lote, así que
+     un cargo que se anotó antes con otra tarjeta quedaría sin detectar. Cuando
+     el comercio es prácticamente el mismo Y el importe es idéntico, se avisa
+     igual y se dice que la forma de pago no coincide: la app avisa, él decide. */
+  var pg=pagoCoincide({pago:m.pago},{pago:f.pago});
+  var otroPago=(pg===-1);
+  if(otroPago && !(v0===v1 && sim>=SIM_REPE_FUERTE)) return null;
+  return {tipo:"parecida", dias:d, sim:sim, dif:red((v0-v1)/100), otroPago:otroPago,
+          pagoM:m.pago||"", pagoF:f.pago||""};
 }
 function repeMejor(a,b){          /* exacta gana; después, menos días */
   if(!a) return true;
@@ -5262,6 +5328,7 @@ function bRepetida(f){
       var r=repeCompara(f,m);
       if(!r) return;
       if(repeMejor(mejor,r)) mejor={mov:m, k:k, dias:r.dias, tipo:r.tipo, sim:r.sim, dif:r.dif,
+                                    otroPago:!!r.otroPago, pagoM:r.pagoM||"", pagoF:r.pagoF||"",
                                     otra:(k!==kA), perm:!!m.permId};
     });
   });
@@ -5566,13 +5633,17 @@ function bEstado(f){
     txt:(casi?"parecida a una ya registrada":"ya registrada")+
         (f.repe.otra?" en "+nomVentana(f.repe.k):"")+" el "+fmtF(f.repe.mov.fecha)+
         (f.repe.dias?" ("+f.repe.dias+" día"+(f.repe.dias===1?"":"s")+" de diferencia)":"")+
-        (casi&&f.repe.dif?" · "+fmt(Math.abs(f.repe.dif))+" de diferencia":""),
+        (casi&&f.repe.dif?" · "+fmt(Math.abs(f.repe.dif))+" de diferencia":"")+
+        (f.repe.otroPago?" · otra forma de pago":""),
     tit:(casi
         ? "«"+(f.repe.mov.desc||"")+"» por "+fmt(f.repe.mov.monto)+" del "+fmtF(f.repe.mov.fecha)+
           " en "+nomVentana(f.repe.k)+". No es idéntica, pero: importe con menos de "+fmt(TOL_REPE)+
-          " de diferencia, descripción parecida, la misma forma de pago y menos de "+DIAS_REPE_CASI+
+          " de diferencia, descripción parecida y menos de "+DIAS_REPE_CASI+
           " días. Eso pasa cuando el mismo cargo se copia de dos orígenes: uno escribe el comercio con la "+
-          "ciudad y el otro no, y uno lo fecha el día de compra y el otro el de aplicación."
+          "ciudad y el otro no, y uno lo fecha el día de compra y el otro el de aplicación."+
+          (f.repe.otroPago? " La forma de pago NO coincide («"+(f.repe.pagoM||"sin forma")+"» contra «"+
+            (f.repe.pagoF||"sin forma")+"»), pero el importe es idéntico y el comercio es el mismo, "+
+            "así que igual se avisa: al pegar en bloque la forma de pago la pone el lote y puede no ser la real." : "")
         : "Ya hay un movimiento con el mismo importe y la misma descripción en "+nomVentana(f.repe.k)+
           ", con fecha "+fmtF(f.repe.mov.fecha))+
         (f.repe.perm?" · ligado a un permanente":"")+

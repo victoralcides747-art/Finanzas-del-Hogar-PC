@@ -259,6 +259,9 @@ tr.falta td:first-child{box-shadow:inset 3px 0 0 var(--avi)}
 tr.ojo td:first-child{box-shadow:inset 3px 0 0 var(--avi)}
 tr.lista td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
 .est{font-size:11px;line-height:1.25;display:inline-block}
+/* el movimiento concreto contra el que se comparó, debajo del estado */
+.est-det{font-size:10.5px;line-height:1.35;margin-top:3px;color:var(--tx2)}
+.est-det b{font-weight:650}
 .est.lista{color:var(--ok-tx)}
 .est.falta{color:var(--avi-tx);font-weight:600}
 .est.ojo{color:var(--avi-tx)}
@@ -5333,10 +5336,14 @@ function bEstado(f){
   if(B.tipo==="Egreso" && !f.pago) falta.push("forma de pago");
   if(falta.length) return {clase:"falta", txt:"falta "+falta.join(", "), ok:false};
   if(f.repeFila) return {clase:"ojo", txt:"repetida: igual a la fila "+f.repeFila+" de este pegado", ok:true, repe:true,
+    det:'<span class="sub">es igual a la fila '+f.repeFila+' de esta misma grilla</span>',
     tit:"Dentro de este mismo pegado hay otra fila con la misma fecha, el mismo importe y la misma descripción. Suele pasar cuando dos estados de cuenta se traslapan. Quitar una con la × o guardar las dos: la app no decide."};
   if(f.repe){
     var casi=(f.repe.tipo==="parecida");
     return {clase:"ojo", ok:true, repe:true,
+    /* CUÁL movimiento: sin esto había que adivinar contra qué la comparó */
+    det:'<span class="sub">el movimiento que ya está:</span><br>'+detMov(f.repe.mov,f.repe.k)+
+        (f.repe.perm?'<br><span class="sub">ligado a un permanente</span>':''),
     txt:(casi?"parecida a una ya registrada":"ya registrada")+
         (f.repe.otra?" en "+nomVentana(f.repe.k):"")+" el "+fmtF(f.repe.mov.fecha)+
         (f.repe.dias?" ("+f.repe.dias+" día"+(f.repe.dias===1?"":"s")+" de diferencia)":"")+
@@ -5456,7 +5463,7 @@ function pintaPegado0(){
         '<th class="plano" style="width:152px">Categoría</th>'+
         '<th class="plano" style="width:150px">Forma de pago</th>'+
         '<th class="plano" style="width:290px" title="A qué permanente de la ventana corresponde el cobro. La app propone uno cuando la coincidencia es inequívoca y muestra su ficha completa —importe, forma de pago, rubro, productos— con en rojo lo que no calza. La elección es tuya: «ninguno» lo registra como gasto normal, otro lo liga a ese, y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.">Permanente</th>'+
-        '<th class="plano" style="width:132px">Estado</th>'+
+        '<th class="plano" style="width:176px" title="Si la app cree que esta fila ya está registrada, acá aparece el movimiento concreto que encontró. No tiene relación con la columna Permanente: esa compara contra la lista de permanentes, esta contra los movimientos ya guardados.">Estado</th>'+
         '<th class="plano" style="width:30px"></th>'+
       '</tr></thead><tbody id="bCuerpo">'+B.filas.map(bFila).join("")+'</tbody></table></div>'+
       '<div id="bResumen" data-t="bResumen"></div>'+
@@ -5478,7 +5485,7 @@ function bFila(f,i){
     '<td><select class="cel'+(f.catAuto?" auto":"")+'" data-bc="cat" title="'+esc(catTit)+'">'+opciones(cats,f.cat)+'</select></td>'+
     '<td><select class="cel" data-bc="pago">'+opciones(S.formas,f.pago)+'</select></td>'+
     '<td style="padding:5px 8px;max-width:290px;overflow:hidden">'+sug+'</td>'+
-    '<td style="padding:5px 8px"><span class="est '+e.clase+'"'+(e.tit?' title="'+esc(e.tit)+'"':'')+'>'+esc(e.txt)+'</span></td>'+
+    '<td style="padding:5px 8px" data-est-td>'+bEstadoHTML(e)+'</td>'+
     '<td><button class="borrar" data-acc="b-borrar">×</button></td>'+
   '</tr>';
 }
@@ -5579,6 +5586,21 @@ function bSugHTML(f){
     (notas.length?'<div style="font-size:11px;line-height:1.4;margin-top:3px">'+notas.join('<br>')+'</div>':'')+
   '</div>';
 }
+/* La columna Estado no tiene nada que ver con la columna Permanente. Una compara
+   contra los MOVIMIENTOS ya guardados; la otra contra la lista de PERMANENTES.
+   Por eso, cuando dice "ya registrada", muestra abajo el movimiento concreto que
+   encontró — comercio, importe, forma de pago — y no hay que adivinar cuál es. */
+function bEstadoHTML(e){
+  return '<span class="est '+e.clase+'"'+(e.tit?' title="'+esc(e.tit)+'"':'')+'>'+esc(e.txt)+'</span>'+
+    (e.det? '<div class="est-det">'+e.det+'</div>' : '');
+}
+function detMov(m,k){
+  if(!m) return "";
+  return '<b>'+esc(String(m.desc||"(sin descripción)").slice(0,46))+'</b><br>'+
+    fmt(m.monto)+(m.pago?' &middot; '+esc(m.pago):'')+
+    (m.cat?' &middot; '+esc(m.cat):'')+
+    (k&&k!==kAct()? '<br>en '+esc(nomVentana(k)) : '');
+}
 function bClase(f){
   if(!f.sug) return "";
   if(f.sug.yaMarcado||f.sug.yaCubierto) return "dup";
@@ -5588,8 +5610,8 @@ function bRepintaFila(i){
   var tr=document.querySelector('tr[data-b="'+i+'"]'); if(!tr) return;
   var f=B.filas[i], e=bEstado(f);
   tr.className=bClase(f)+" "+e.clase;
-  var est=tr.querySelector(".est");
-  if(est){ est.className="est "+e.clase; est.textContent=e.txt; est.title=e.tit||""; }
+  var tdE=tr.querySelector("[data-est-td]");
+  if(tdE) tdE.innerHTML=bEstadoHTML(e);
   tr.children[6].innerHTML=bSugHTML(f);
   var sel=tr.querySelector('[data-bc="cat"]');
   if(sel && !f.catManual){
@@ -5604,9 +5626,9 @@ function bRepintaFila(i){
 function bRepintaEstados(){
   B.filas.forEach(function(f,i){
     var tr=document.querySelector('tr[data-b="'+i+'"]'); if(!tr) return;
-    var e=bEstado(f), est=tr.querySelector(".est");
+    var e=bEstado(f), tdE=tr.querySelector("[data-est-td]");
     tr.className=bClase(f)+" "+e.clase;
-    if(est){ est.className="est "+e.clase; est.textContent=e.txt; est.title=e.tit||""; }
+    if(tdE) tdE.innerHTML=bEstadoHTML(e);
   });
 }
 function bResumen(){

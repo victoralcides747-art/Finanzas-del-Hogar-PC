@@ -482,8 +482,39 @@ var PRESTAMO_BASE=[{
   nota:"Estado de cuenta al 09/04/2026. Transferencia mensual L 11,802.68 = cuota L 11,477.68 + aporte cooperativa L 325.00."
 }];
 
+/* ---------- cuenta ----------------------------------------------------------
+   Una sola app, varias casas. La cuenta vive en el aparato, no en los datos:
+   quien ya venía usando la app no ve ningún cambio (arranca en la cuenta de
+   siempre) y en un aparato nuevo se escribe una vez y queda.
+
+   Cada cuenta tiene SU documento en la nube y SU llave local. No se cruzan
+   nunca: cambiar de cuenta no mezcla nada, recarga la página y empieza de la
+   otra. Quién puede leer qué lo decide Firestore, no esta pantalla. */
+var CUENTA_ORIGINAL="victor";                 /* la casa que ya venía usando la app */
+var LLAVE_CUENTA="finanzasHogar_cuenta";
+function cuentaNorm(s){
+  return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]/g,"").slice(0,24);
+}
+function cuentaActual(){
+  var c=""; try{ c=localStorage.getItem(LLAVE_CUENTA)||""; }catch(e){}
+  return cuentaNorm(c)||CUENTA_ORIGINAL;
+}
+function cuentaCambiar(nombre){
+  var c=cuentaNorm(nombre);
+  if(!c) return null;
+  try{ localStorage.setItem(LLAVE_CUENTA,c); }catch(e){ return null; }
+  return c;
+}
+var CUENTA=cuentaActual();
+/* La cuenta de siempre conserva su llave y su documento tal cual estaban: nada
+   que migrar, nada que se pueda perder en el camino. */
+var LLAVE_BASE="finanzasHogarRodVit_v1";
+var DOC_NUBE=(CUENTA===CUENTA_ORIGINAL)? "estado" : CUENTA;
+
 /* ---------- almacenamiento ---------- */
-var LLAVE="finanzasHogarRodVit_v1", sinDisco=false, memoria=null;
+var LLAVE=(CUENTA===CUENTA_ORIGINAL)? LLAVE_BASE : LLAVE_BASE+"__"+CUENTA;
+var sinDisco=false, memoria=null;
 function leerDisco(){
   try{ return localStorage.getItem(LLAVE); }
   catch(e){ sinDisco=true; return memoria; }
@@ -501,7 +532,7 @@ function guardar(){
    permite recuperar los datos desde otro dispositivo o si se borra el navegador. */
 var NUBE_OK=false, nubeDB=null, nubeRef=null, nubeTimer=null, aplicandoNube=false;
 var nubeAuth=null, SESION=false;
-var CORREO_FIJO="victor@finanzas.app";   // correo interno fijo; el usuario solo escribe su PIN
+var CORREO_FIJO=CUENTA+"@finanzas.app";  // correo interno derivado de la cuenta; el usuario solo escribe su PIN
 (function initFirebase(){
   try{
     var firebaseConfig = {
@@ -514,7 +545,7 @@ var CORREO_FIJO="victor@finanzas.app";   // correo interno fijo; el usuario solo
     };
     firebase.initializeApp(firebaseConfig);
     nubeDB = firebase.firestore();
-    nubeRef = nubeDB.collection("finanzas").doc("estado");  // documento único
+    nubeRef = nubeDB.collection("finanzas").doc(DOC_NUBE);  // un documento por cuenta
     nubeAuth = firebase.auth();
     NUBE_OK = true;
   }catch(e){ NUBE_OK=false; }
@@ -790,15 +821,70 @@ function pantallaPIN(mensaje){
         'style="width:180px;text-align:center;font-size:26px;letter-spacing:10px;padding:12px 10px;border-radius:12px;border:1px solid #33333a;background:#1f1f24;color:#fff;outline:none" '+
         'placeholder="••••••">'+
       '<button id="pinBtn" style="width:180px;padding:12px;border:none;border-radius:12px;background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer">Entrar</button>'+
-      '<div id="pinMsg" style="color:#e06b6b;font-size:12.5px;min-height:16px;text-align:center"></div>';
+      '<div id="pinMsg" style="color:#e06b6b;font-size:12.5px;min-height:16px;text-align:center"></div>'+
+      /* Quién está entrando. En un aparato de una sola casa esto no se toca
+         nunca; en uno compartido dice de quién son los datos que se van a
+         abrir, antes de abrirlos. */
+      '<div id="pinCta" style="color:#7d7d86;font-size:12px;text-align:center;margin-top:2px">'+
+        'cuenta: <b id="pinCtaNom" style="color:#9a9aa2;font-weight:650"></b> '+
+        '<button id="pinCtaBtn" type="button" style="background:none;border:0;padding:0 2px;color:#5b8fd6;'+
+        'font:inherit;text-decoration:underline;cursor:pointer">cambiar</button></div>'+
+      '<div id="pinCtaEd" style="display:none;flex-direction:column;align-items:center;gap:8px">'+
+        '<input id="pinCtaInp" type="text" autocomplete="off" maxlength="24" '+
+          'style="width:180px;text-align:center;font-size:15px;padding:9px 10px;border-radius:10px;'+
+          'border:1px solid #33333a;background:#1f1f24;color:#fff;outline:none" placeholder="nombre de cuenta">'+
+        '<button id="pinCtaOk" type="button" style="width:180px;padding:9px;border:1px solid #33333a;'+
+          'border-radius:10px;background:#26262c;color:#eaeaea;font-size:13.5px;cursor:pointer">Usar esta cuenta</button>'+
+        '<div style="color:#6e6e77;font-size:11.5px;max-width:230px;text-align:center;line-height:1.45">'+
+          'Cada cuenta tiene sus propios datos, aparte y sin mezclarse. '+
+          'La cuenta queda guardada en este aparato.</div>'+
+      '</div>';
     document.body.appendChild(ov);
     var inp=ov.querySelector("#pinInput"), btn=ov.querySelector("#pinBtn");
     btn.addEventListener("click", intentarLogin);
     inp.addEventListener("keydown", function(e){ if(e.key==="Enter") intentarLogin(); });
+    ov.querySelector("#pinCtaBtn").addEventListener("click", function(){
+      var ed=ov.querySelector("#pinCtaEd"), ci=ov.querySelector("#pinCtaInp");
+      ed.style.display="flex"; ov.querySelector("#pinCta").style.display="none";
+      ci.value=CUENTA; ci.focus(); ci.select();
+    });
+    var aplicaCuenta=function(){
+      var ci=ov.querySelector("#pinCtaInp"), c=cuentaCambiar(ci.value);
+      if(!c){ var m2=ov.querySelector("#pinMsg"); if(m2) m2.textContent="Escribí un nombre de cuenta."; return; }
+      if(c===CUENTA){ ov.querySelector("#pinCtaEd").style.display="none";
+                      ov.querySelector("#pinCta").style.display=""; return; }
+      /* Firebase recuerda la sesión en el navegador. Si se recarga sin cerrarla,
+         la página vuelve con la sesión de la cuenta ANTERIOR pero apuntando al
+         documento de la NUEVA: la nube rechaza, y se ve una app vacía que no
+         sincroniza. Por eso primero se cierra la sesión y después se recarga. */
+      var recarga=function(){ location.reload(); };
+      var hecho=false, ya=function(){ if(hecho) return; hecho=true; recarga(); };
+      setTimeout(ya, 2500);                       /* si signOut se cuelga, igual recarga */
+      try{
+        if(nubeAuth) nubeAuth.signOut().then(ya)["catch"](ya);
+        else ya();
+      }catch(e){ ya(); }
+    };
+    ov.querySelector("#pinCtaOk").addEventListener("click", aplicaCuenta);
+    ov.querySelector("#pinCtaInp").addEventListener("keydown", function(e){
+      if(e.key==="Enter") aplicaCuenta(); });
     setTimeout(function(){ inp.focus(); }, 100);
   }
+  var nom=ov.querySelector("#pinCtaNom"); if(nom) nom.textContent=CUENTA;
   ov.style.display="flex";
-  var m=ov.querySelector("#pinMsg"); if(m) m.textContent=mensaje||"";
+  /* null = dejar el aviso que ya estaba. Hace falta porque cerrar una sesión
+     ajena dispara un segundo aviso de Firebase que, si no, borraría el mensaje
+     que explica de quién tiene que ser el PIN. */
+  var m=ov.querySelector("#pinMsg");
+  if(m && mensaje!=null) m.textContent=mensaje;
+  /* Al volver a esta pantalla el botón tiene que estar listo otra vez: si se
+     entró y después se bloqueó, quedaba en "Entrando…" y no dejaba reintentar. */
+  var bt=ov.querySelector("#pinBtn");
+  if(bt){ bt.disabled=false; bt.textContent="Entrar"; }
+  var pi=ov.querySelector("#pinInput"); if(pi) pi.value="";
+  var ed=ov.querySelector("#pinCtaEd"), cta=ov.querySelector("#pinCta");
+  if(ed) ed.style.display="none";
+  if(cta) cta.style.display="";
 }
 function ocultarPIN(){ var ov=document.getElementById("pinOverlay"); if(ov) ov.style.display="none"; }
 // cierra la sesión y vuelve a pedir el PIN (los datos quedan guardados local y en la nube)
@@ -823,7 +909,7 @@ function intentarLogin(){
       btn.disabled=false; btn.textContent="Entrar"; inp.value=""; inp.focus();
       var code=err && err.code || "";
       if(code==="auth/wrong-password" || code==="auth/invalid-credential") msg.textContent="PIN incorrecto.";
-      else if(code==="auth/user-not-found") msg.textContent="Usuario no encontrado. Créalo en Firebase.";
+      else if(code==="auth/user-not-found"||code==="auth/invalid-email") msg.textContent="No existe la cuenta «"+CUENTA+"».";
       else if(code==="auth/too-many-requests") msg.textContent="Demasiados intentos. Espera un momento.";
       else if(code==="auth/network-request-failed") msg.textContent="Sin internet.";
       else msg.textContent="No se pudo entrar: "+code;
@@ -843,8 +929,17 @@ function arrancarApp(){
 // vigila el estado de sesión: con sesión, arranca; sin sesión, muestra el PIN
 if(NUBE_OK && nubeAuth){
   nubeAuth.onAuthStateChanged(function(user){
+    /* La sesión guardada tiene que ser la de la cuenta abierta. Si no lo es
+       —quedó una sesión vieja de otra cuenta— se cierra y se pide el PIN, en
+       vez de arrancar apuntando a un documento que la nube va a rechazar. */
+    if(user && user.email && CORREO_FIJO && user.email.toLowerCase()!==CORREO_FIJO.toLowerCase()){
+      SESION=false;
+      try{ nubeAuth.signOut(); }catch(e){}
+      if(!appArrancada) pantallaPIN("Escribí el PIN de «"+CUENTA+"».");
+      return;
+    }
     if(user){ SESION=true; arrancarApp(); }
-    else{ SESION=false; if(!appArrancada) pantallaPIN(""); }
+    else{ SESION=false; if(!appArrancada) pantallaPIN(null); }
   });
 }else{
   // sin Firebase disponible (raro): al menos deja usar la app local, sin nube
@@ -3447,7 +3542,10 @@ function abreAjustes(seccion){
         'title="Guarda ventanas, movimientos, permanentes, presupuestos y listas en un .json que el mismo Importar vuelve a leer.">Descargar respaldo</button>'+
       '<button class="btn gh" data-acc="ver-json" title="Si la descarga falla, copiá el texto y pegalo en un archivo .json.">Ver / copiar el JSON</button></div></div>'+
       '<div class="secc"><h4>Sesión</h4>'+
-      '<div class="barra-h"><button class="btn gh" data-acc="bloquear" title="Cierra la sesión y pide el PIN de nuevo. Tus datos quedan guardados.">🔒 Bloquear app</button></div></div>'+
+      '<div class="barra-h"><button class="btn gh" data-acc="bloquear" title="Cierra la sesión y pide el PIN de nuevo. Tus datos quedan guardados.">🔒 Bloquear app</button>'+
+        '<span class="sub" data-t="cuentaAbierta" title="'+esc(
+          "Estos datos son de esta cuenta y de ninguna otra: cada cuenta tiene su propio documento en la nube y su propia copia en este aparato. Para abrir otra, bloqueá la app y elegí «cambiar» en la pantalla del PIN.")+
+        '">cuenta abierta: <b>'+esc(CUENTA)+'</b></span></div></div>'+
       '<div class="secc"><h4>Zona de riesgo</h4>'+
       '<button class="btn mal peq" data-acc="borrar-todo" title="Borra ventanas, movimientos, permanentes y presupuestos. Pide dos confirmaciones.">Borrar todo</button></div>'+
       (sinDisco?'<div class="aviso"><b>Sin almacenamiento local.</b> Los cambios solo persisten mientras la pestaña esté abierta. Descargar un respaldo antes de cerrar.</div>':'');
@@ -3839,7 +3937,7 @@ function cargarNormaliza(){
 }
 function exportar(){
   var txt=JSON.stringify(S,null,1);
-  var nom="respaldo_finanzas_"+hoyISO()+".json";
+  var nom="respaldo_finanzas_"+CUENTA+"_"+hoyISO()+".json";   /* con la cuenta, para no mezclar respaldos */
   try{
     var b=new Blob([txt],{type:"application/json"}), u=URL.createObjectURL(b);
     var a=document.createElement("a"); a.href=u; a.download=nom;

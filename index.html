@@ -498,6 +498,9 @@ var ICONO_192="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3Gw
     if(!/^https?:$/.test(location.protocol)) return;   /* abierto como archivo: no aplica */
     var aqui=location.href.split("#")[0].split("?")[0];
     var man={
+      /* Identidad propia: la satélite vive en la misma carpeta del mismo sitio,
+         así que sin esto Android podría tratarlas como la misma app instalada. */
+      id:"finanzas-hogar-madre",
       name:"Finanzas del Hogar", short_name:"Finanzas",
       description:"Ingresos, gastos, presupuesto y tarjetas por ventana.",
       start_url:aqui, scope:aqui.replace(/[^\/]*$/,""),
@@ -957,6 +960,7 @@ function arrancarApp(){
   cargar(); cargarNormaliza(); render();
   nubeEstado(SESION?"":"off");
   sincronizarDesdeNube();
+  notasEscuchar();
   if(S.fx && S.fx.auto!==false && fxViejo()) setTimeout(function(){ fxActualizar(false); }, 300);
   if(sinDisco) toast("Sin almacenamiento local · descargar un respaldo antes de cerrar",8000);
 }
@@ -2075,6 +2079,7 @@ function vistaHoy(){
         '<div class="pie">'+nE+' movimiento'+(nE===1?"":"s")+'</div></button>'+
     '</div>'+
   '</div>';
+  h+=panelFrescura(k);
   h+=panelAvisos(k);
   h+=panelRubrosHoy(k);
   h+='</div>';
@@ -2132,6 +2137,304 @@ function vistaHoy(){
 /* El recordatorio de las suscripciones con fecha de corte. Aparece solo cuando
    falta poco; si no hay nada que avisar, no ocupa espacio. Ningún número de
    este panel entra en la resta: es un aviso, no plata. */
+/* ═══════════ NOTAS · SEGUNDO NÚMERO, NUNCA UN MOVIMIENTO ══════════════════
+   Las notas se anotan en la app satélite, parado en la tienda, antes de que el
+   cargo llegue al estado de cuenta. Sirven para UNA cosa: ensombrecer un
+   margen —"cuánto me queda de este rubro"— mientras el dato real llega.
+
+   NO SON DINERO. No entran en totales(), ni en el presupuesto, ni en la
+   proyección, ni en los cierres. Si una nota se quedara sin borrar, el número
+   con notas queda pesimista: muestra menos plata de la que hay, nunca más. Ese
+   es el lado seguro del error, y es a propósito.
+
+   Viven en su propia colección, un documento por nota, porque las escriben las
+   dos apps: si vivieran dentro del documento de estado, dos escrituras a la vez
+   se pisarían entera. Ojo con el segmento: el estado usa DOC_NUBE ("estado"
+   para la casa original), las notas usan CUENTA ("victor"). No son el mismo.
+
+   La forma la fijó el chat de la satélite y se lee tolerando que falte todo. */
+var NOTAS=[], NOTAS_EST="", notasUnsub=null;
+function notasRef(){
+  if(!NUBE_OK || !nubeDB) return null;
+  try{ return nubeDB.collection("notas").doc(CUENTA).collection("items"); }
+  catch(e){ return null; }
+}
+function notaNorm(d,id){
+  d=d||{};
+  var n=+d.monto;
+  return {id:id,
+    fecha:String(d.fecha||""), que:String(d.que||""),
+    monto:(isFinite(n)?n:0),
+    pago:String(d.pago||""), cat:String(d.cat||""), k:String(d.k||""),
+    cubierta:(d.cubierta===true), cubiertaTs:(+d.cubiertaTs||0),
+    autor:String(d.autor||""), ts:(+d.ts||0)};
+}
+/* Las que cuentan: de esta ventana y sin cubrir. Nada más. */
+function notasVivas(k){
+  return NOTAS.filter(function(n){ return !n.cubierta && n.k===k; });
+}
+/* Sin ventana estampada no pertenece a ningún corte: no se adivina cuál. Pero
+   tampoco puede desaparecer de la vista, así que se lista con las sueltas. */
+function notasSinCorte(){
+  return NOTAS.filter(function(n){ return !n.cubierta && !n.k; });
+}
+function notasDeRubro(k,cat){
+  return notasVivas(k).filter(function(n){ return n.cat===cat; });
+}
+function notasSuma(arr){
+  var t=0; arr.forEach(function(n){ t+=cts(n.monto); }); return red(t/100);
+}
+/* Escucha en vivo: la otra persona anota desde el celular y acá se ve solo.
+   Si falla —sin internet, reglas, lo que sea— la app sigue igual, sin notas. */
+function notasEscuchar(){
+  var ref=notasRef(); if(!ref) return;
+  try{ if(notasUnsub) notasUnsub(); }catch(e){}
+  notasUnsub=null;
+  try{
+    notasUnsub=ref.onSnapshot(function(snap){
+      var arr=[];
+      snap.forEach(function(doc){ arr.push(notaNorm(doc.data(), doc.id)); });
+      NOTAS=arr; NOTAS_EST="ok";
+      render();
+    }, function(e){ NOTAS=[]; NOTAS_EST=(e&&e.code)||"mal"; });
+  }catch(e){ NOTAS=[]; NOTAS_EST="mal"; }
+}
+
+/* ═══════════ LIMPIAR NOTAS DESPUÉS DE UN PEGADO ══════════════════════════
+   Una nota no es una compra: es "esto todavía no está en la app". Cuando el
+   estado de cuenta llega y se registra, esa deuda queda saldada — sin importar
+   qué línea del banco corresponde a qué nota.
+
+   Por eso NO se intenta emparejar automáticamente. Emparejar es imposible: el
+   texto del banco nunca coincide con lo escrito en la caja, y el monto tampoco,
+   porque por ley se cobra un poco menos al pagar con tarjeta. Lo que sí se
+   puede es proponer y que él decida, que es la regla 2 de siempre.
+
+   La única señal que vale es asimétrica y por eso sirve: lo anotado en la caja
+   es igual o MAYOR que lo que cobra el banco, nunca menor. Se usa solo para
+   mostrar al lado el movimiento que probablemente le corresponde. No decide. */
+var CUB=null;                                  /* propuesta de cubrir, mientras el modal está abierto */
+
+/* ¿Este movimiento podría ser esta nota? Solo para mostrarlo al lado. */
+function notaCalza(n,m){
+  /* pagoCoincide devuelve 1 (calza), -1 (no calza) o 0 (no se sabe). Solo el 1
+     sirve: tomar -1 por verdadero cruzaría notas de una tarjeta con otra. */
+  if(pagoCoincide({pago:n.pago},{pago:m.pago})!==1) return null;
+  var vn=cts(n.monto), vm=cts(m.monto);
+  if(vm<=0) return null;
+  var dif=vn-vm;                               /* la nota debe quedar arriba, o casi */
+  if(dif< -200) return null;                   /* más de L 2 por debajo: no es */
+  if(dif> Math.max(Math.round(vm*0.20), 5000)) return null;   /* ni 20% ni L 50 por arriba */
+  var d=(n.fecha&&m.fecha)? diasEntre(n.fecha,m.fecha) : 99;
+  if(d>12) return null;
+  return {dif:dif, dias:d, m:m};
+}
+function mejorCalce(n,movs){
+  var mejor=null;
+  movs.forEach(function(m){
+    var c=notaCalza(n,m); if(!c) return;
+    if(!mejor || Math.abs(c.dif)<Math.abs(mejor.dif) ||
+       (Math.abs(c.dif)===Math.abs(mejor.dif) && c.dias<mejor.dias)) mejor=c;
+  });
+  return mejor;
+}
+/* Arma la propuesta: qué notas quedaron cubiertas por lo que se acaba de
+   guardar. Una nota se propone tildada si su fecha ya está dentro de lo que
+   cubre el pegado PARA SU FORMA DE PAGO. Nada se aplica solo. */
+function cubrirPropuesta(k,nuevos){
+  var vivas=notasVivas(k);
+  if(!vivas.length) return null;
+  var egresos=nuevos.filter(function(m){ return m.tipo!=="Ingreso"; });
+  if(!egresos.length) return null;
+  /* Hasta qué fecha llegó el pegado, forma de pago por forma de pago. */
+  var hasta={};
+  egresos.forEach(function(m){
+    var f=m.pago||"";
+    if(!hasta[f] || String(m.fecha||"")>hasta[f]) hasta[f]=String(m.fecha||"");
+  });
+  var out=[];
+  vivas.forEach(function(n){
+    var tope="";
+    Object.keys(hasta).forEach(function(f){
+      if(pagoCoincide({pago:n.pago},{pago:f})===1 && hasta[f]>tope) tope=hasta[f];
+    });
+    if(!tope) return;                          /* el pegado no tocó su tarjeta */
+    var c=mejorCalce(n,egresos);
+    out.push({n:n, calce:c, cubre:(n.fecha<=tope), tope:tope,
+              tomar:(n.fecha<=tope)});
+  });
+  return out.length? {k:k, filas:out} : null;
+}
+function cubrirHTML(){
+  if(!CUB) return "";
+  var n=CUB.filas.filter(function(x){ return x.tomar; }).length;
+  return '<div class="mh"><h3>Notas que este pegado ya cubrió</h3>'+
+      '<button class="x" data-acc="cerrar">×</button></div>'+
+    '<p class="sub" style="margin:0 0 8px">Una nota es un recordatorio de lo que todavía no estaba registrado. '+
+      'Ahora que el estado de cuenta entró, lo que quede sin cubrir sigue restando de tus rubros. '+
+      'Destildá las que sepas que siguen flotando.</p>'+
+    '<div class="tabla-cont" style="max-height:46vh"><table data-t="tablaCubrir"><thead><tr>'+
+      '<th class="plano" style="width:30px"></th>'+
+      '<th class="plano" style="width:92px">Fecha</th>'+
+      '<th class="plano">Nota</th>'+
+      '<th class="plano der" style="width:104px">Monto</th>'+
+      '<th class="plano" style="width:44%" title="'+esc(
+        "El movimiento del pegado que más se le parece, por monto y fecha. Es solo una pista para que "+
+        "reconozcas la compra: la app no empareja nada sola, y el importe del banco casi siempre es un "+
+        "poco menor que lo que anotaste, por el descuento de ley.")+'">Se parece a</th>'+
+    '</tr></thead><tbody>'+
+    CUB.filas.map(function(x,i){
+      var c=x.calce;
+      return '<tr data-cub="'+i+'">'+
+        '<td style="text-align:center"><input type="checkbox" data-cubc="tomar"'+(x.tomar?" checked":"")+'></td>'+
+        '<td class="sub" style="padding:6px 8px;white-space:nowrap">'+esc(fmtF(x.n.fecha))+'</td>'+
+        '<td style="padding:6px 8px">'+esc(x.n.que||"(sin texto)")+
+          '<div class="sub" style="font-size:10.5px">'+esc(x.n.pago||"—")+
+          (x.n.cat?' &middot; '+esc(x.n.cat):' &middot; sin rubro')+
+          (x.n.autor?' &middot; '+esc(x.n.autor):'')+'</div></td>'+
+        '<td class="num" style="padding:6px 8px">'+fmt(x.n.monto)+'</td>'+
+        '<td class="sub" style="padding:6px 8px">'+
+          (c? esc(c.m.desc||"(sin descripción)")+' &middot; '+esc(fmtF(c.m.fecha))+' &middot; '+fmt(c.m.monto)+
+              '<div style="font-size:10.5px">'+(c.dif===0?"mismo importe":
+                (c.dif>0? fmt(c.dif/100)+" menos en el banco" : fmt(-c.dif/100)+" más en el banco"))+'</div>'
+            : '<span style="opacity:.6">'+(x.cubre?"sin coincidencia clara":"es posterior a este pegado")+'</span>')+
+        '</td></tr>';
+    }).join("")+'</tbody></table></div>'+
+    '<div class="barra-h" style="margin-top:10px">'+
+      '<button class="btn gh peq" data-acc="cub-todos">'+
+        (n===CUB.filas.length?"Desmarcar todas":"Marcar todas")+'</button>'+
+      '<button class="btn" data-acc="cub-guardar" data-t="btnCubrir"'+(n?"":" disabled style=\"opacity:.5\"")+'>'+
+        'Dar por cubierta'+(n===1?"":"s")+(n?" ("+n+")":"")+'</button>'+
+      '<button class="btn gh" data-acc="cerrar">Ahora no</button>'+
+      '<span class="sub">se pueden volver a mostrar desde la app del celular</span></div>';
+}
+function abreCubrir(){ if(CUB) abreModal(cubrirHTML(), true); }
+function pintaCubrir(){ var v=document.querySelector('[data-t="tablaCubrir"]');
+  if(v && CUB) abreModal(cubrirHTML(), true); }
+function cubrirGuardar(){
+  if(!CUB) return;
+  var sel=CUB.filas.filter(function(x){ return x.tomar; });
+  if(!sel.length){ toast("Ninguna marcada."); return; }
+  var ref=notasRef();
+  if(!ref){ toast("Sin conexión a la nube: las notas no se pudieron marcar",5000); return; }
+  var ahora=Date.now(), listos=0, fallos=0, total=sel.length;
+  var fin=function(){
+    if(listos+fallos<total) return;
+    CUB=null; cierraModal(); render();
+    toast(listos+" nota"+(listos===1?"":"s")+" dada"+(listos===1?"":"s")+" por cubierta"+(listos===1?"":"s")+
+      (fallos?" &middot; "+fallos+" no se pudo marcar":""), fallos?6000:3600);
+  };
+  sel.forEach(function(x){
+    try{
+      ref.doc(x.n.id).update({cubierta:true, cubiertaTs:ahora})
+        .then(function(){ listos++; fin(); })
+        ["catch"](function(){ fallos++; fin(); });
+    }catch(e){ fallos++; fin(); }
+  });
+}
+
+/* ═══════════ HASTA CUÁNDO LLEGA EL DATO ═══════════════════════════════════
+   Un saldo correcto puede engañar si le faltan las compras de anteayer. Este
+   panel no calcula plata ni la corrige: dice, por forma de pago, hasta qué
+   fecha está cargado y hace cuánto fue el último pegado, para saber cuánto
+   confiar en los números que están arriba.
+
+   Todo sale de lo que ya existe —la fecha de los movimientos y la bitácora—:
+   no se guarda ningún dato nuevo. Y NINGUNA cifra de acá entra en totales(),
+   en el presupuesto ni en la proyección. Es información sobre el dato, no
+   dato. (Regla 3: las fechas sirven para identificar y avisar, nunca para dar
+   por hecho un monto.) */
+function frescuraDe(k){
+  var movs=movsDe(k);
+  /* Índice id→movimiento, para leer de qué forma de pago fue cada pegado sin
+     recorrer todo por cada entrada de la bitácora. */
+  var porId={};
+  S.movimientos.forEach(function(m){ porId[m.id]=m; });
+
+  /* Último pegado por forma de pago. Se deduce de los movimientos que ESE
+     pegado dejó vivos: si se revirtió o se borraron, ese pegado no cuenta,
+     que es lo correcto — sus datos ya no están. */
+  var pegado={};
+  (S.bitacora||[]).forEach(function(e){
+    if(e.tipo!=="bloque" || e.revertido) return;
+    (e.movs||[]).forEach(function(mid){
+      var m=porId[mid]; if(!m || m.k!==k) return;
+      var f=m.pago||"(sin forma)";
+      if(!pegado[f] || String(e.ts)>String(pegado[f])) pegado[f]=e.ts;
+    });
+  });
+
+  var hoy=hoyISO(), acum={};
+  movs.forEach(function(m){
+    var f=m.pago||"(sin forma)";
+    if(!acum[f]) acum[f]={forma:f, ultima:"", n:0};
+    acum[f].n++;
+    if(String(m.fecha||"")>acum[f].ultima) acum[f].ultima=String(m.fecha||"");
+  });
+
+  /* Qué formas se listan: las que se usaron en esta ventana, y las que se
+     usaron alguna vez aunque en esta no —"sin registros" en una tarjeta que sí
+     usás es justo lo que hay que ver—. Una forma de pago que nunca se usó no
+     aporta nada y solo empuja hacia abajo lo que importa. El orden de la lista
+     es el de SUS formas de pago, no uno inventado. */
+  var usadaAlguna={};
+  S.movimientos.forEach(function(m){ if(m.pago) usadaAlguna[m.pago]=true; });
+
+  var out=[];
+  (S.formas||[]).forEach(function(f){
+    if(!acum[f] && !usadaAlguna[f]) return;
+    var a=acum[f]||{forma:f, ultima:"", n:0};
+    out.push({forma:f, ultima:a.ultima, n:a.n,
+              dias:a.ultima? diasEntre(a.ultima,hoy) : null,
+              pegTs:pegado[f]||"",
+              pegDias:pegado[f]? diasEntre(String(pegado[f]).slice(0,10),hoy) : null});
+  });
+  if(acum["(sin forma)"]) out.push({forma:"(sin forma)", ultima:acum["(sin forma)"].ultima,
+    n:acum["(sin forma)"].n, dias:diasEntre(acum["(sin forma)"].ultima,hoy),
+    pegTs:pegado["(sin forma)"]||"", pegDias:null});
+  return out;
+}
+function haceTxt(d){
+  if(d==null) return "—";
+  if(d===0) return "hoy";
+  if(d===1) return "ayer";
+  return "hace "+d+" días";
+}
+function panelFrescura(k){
+  var fs=frescuraDe(k);
+  if(!fs.length) return "";
+  /* El más atrasado primero: lo que hay que ver es lo que falta cargar. Las
+     formas sin ningún registro van al principio de todo. */
+  var orden=fs.slice().sort(function(a,b){
+    var da=(a.dias==null)?99999:a.dias, db=(b.dias==null)?99999:b.dias;
+    return db-da;
+  });
+  return '<div class="card" data-t="panelFrescura">'+
+    '<h2 title="'+esc(
+      "Hasta qué fecha están cargados los movimientos de cada forma de pago, y hace cuánto fue el último "+
+      "pegado en bloque. Sirve para saber cuánto confiar en los números de arriba: un saldo correcto "+
+      "igual engaña si le faltan las compras de anteayer. Ninguna cifra de este panel entra en el saldo, "+
+      "en el presupuesto ni en la proyección.")+'">Hasta cuándo llega el dato</h2>'+
+    '<p class="sub" style="margin:0 0 6px">Información sobre el dato, no un cálculo. No entra en ningún número.</p>'+
+    '<div class="tabla-cont"><table data-t="tablaFrescura"><thead><tr>'+
+      '<th class="plano">Forma de pago</th>'+
+      '<th class="plano" style="width:120px" title="Fecha del movimiento más nuevo que hay cargado con esta forma de pago, en esta ventana.">Cargado hasta</th>'+
+      '<th class="plano" style="width:120px" title="Cuánto tiempo pasó desde esa fecha hasta hoy.">Antigüedad</th>'+
+      '<th class="plano" style="width:150px" title="Cuándo fue la última vez que pegaste un bloque que dejó movimientos con esta forma de pago. Si dice «—», lo que hay se cargó a mano.">Último pegado</th>'+
+      '<th class="der" style="width:96px" title="Movimientos cargados con esta forma de pago en esta ventana.">Movimientos</th>'+
+    '</tr></thead><tbody>'+
+    orden.map(function(f){
+      var sin=(f.ultima==="");
+      return '<tr data-fre="'+esc(f.forma)+'">'+
+        '<td style="padding:7px 8px">'+esc(f.forma)+'</td>'+
+        '<td style="padding:7px 8px">'+(sin?'<span class="sub">sin registros</span>':esc(fmtF(f.ultima)))+'</td>'+
+        '<td style="padding:7px 8px" class="sub">'+esc(haceTxt(f.dias))+'</td>'+
+        '<td style="padding:7px 8px" class="sub">'+(f.pegDias==null?'<span title="Lo que hay con esta forma de pago se cargó a mano, no desde un pegado en bloque.">a mano</span>':esc(haceTxt(f.pegDias)))+'</td>'+
+        '<td class="num">'+f.n+'</td>'+
+      '</tr>';
+    }).join("")+'</tbody></table></div></div>';
+}
+
 function panelAvisos(k){
   var lista=avisosVivos(k);
   if(!lista.length) return "";
@@ -2183,6 +2486,16 @@ function panelRubrosHoy(k){
     return a.cat.localeCompare(b.cat);
   });
   var pasados=filas.filter(function(r){ return r.queda<0; }).length;
+  /* Notas de esta ventana, repartidas por rubro. Se calculan acá y no entran en
+     rubrosDe(): esa función alimenta cálculos de dinero y no debe conocerlas. */
+  var hayNotas=false;
+  filas.forEach(function(r){
+    var ns=notasDeRubro(k,r.cat);
+    r.nNotas=ns.length;
+    r.notas=ns.length? notasSuma(ns) : 0;
+    r.quedaN=(r.queda==null)?null:red(r.queda-r.notas);
+    if(ns.length) hayNotas=true;
+  });
   function thH(campo,txt,extra){
     return '<th class="plano'+(extra&&/der|col-plan/.test(extra)?"":"")+'"'+(extra||"")+
       '><button data-ordh="'+campo+'">'+txt+(o.k===campo?(o.dir>0?" ↑":" ↓"):"")+'</button></th>';
@@ -2203,6 +2516,11 @@ function panelRubrosHoy(k){
       thH("pres","Presupuesto",' class="plano der col-plan" style="width:104px" title="Importe asignado al rubro en esta ventana."')+
       thH("gastado","Real",' class="plano der" style="width:104px" title="Suma de los movimientos de la ventana en ese rubro."')+
       thH("queda","Disponible",' class="plano der" style="width:108px" title="Presupuesto menos real. Negativo = rubro excedido."')+
+      (hayNotas? '<th class="plano der" style="width:126px" title="'+esc(
+        "Lo mismo, restando además lo anotado en la app satélite que todavía no está registrado. "+
+        "Las notas NO son movimientos: no entran en el saldo, en el presupuesto ni en la proyección. "+
+        "Si te olvidás de una, este número queda pesimista — te muestra menos plata de la que hay, "+
+        "nunca más.")+'">Con notas</th>' : '')+
       thH("pct","% ejecutado",' class="plano" style="width:96px" title="Real dividido presupuesto."')+
       '<th class="plano" style="width:34px"></th>'+
     '</tr></thead><tbody>'+
@@ -2215,13 +2533,42 @@ function panelRubrosHoy(k){
           esc(r.cat)+(r.n?' <span class="sub">'+r.n+'</span>':'')+'</button></td>'+
         '<td class="num col-plan" style="padding:0"><button class="rub-lnk der" data-desg="rubroFull">'+fmt(r.pres)+'</button></td>'+
         '<td class="num" style="padding:0"><button class="rub-lnk der" data-desg="rubroFull">'+fmt(r.gastado)+'</button></td>'+
-        '<td class="num" style="padding:0"><button class="rub-lnk der" data-desg="rubroFull" style="font-weight:600;color:'+
-          (pasado?"var(--mal-tx)":"var(--ok-tx)")+'">'+fmt(r.queda,r.queda>0)+'</button></td>'+
+        '<td class="num" style="padding:0"><button class="rub-lnk der" data-desg="rubroFull" style="font-weight:'+
+          (r.notas?"400":"600")+';color:'+
+          (r.notas? "var(--tx3)" : (pasado?"var(--mal-tx)":"var(--ok-tx)"))+'">'+fmt(r.queda,r.queda>0)+'</button></td>'+
+        /* El número con notas manda cuando hay notas: es el más completo. El
+           registrado queda al lado, en gris, porque sigue siendo el exacto. */
+        (hayNotas? '<td class="num" style="padding:6px 8px">'+
+          (r.notas? '<b style="color:'+(r.quedaN<0?"var(--mal-tx)":"var(--ok-tx)")+'" title="'+esc(
+              "Disponible menos "+fmt(r.notas)+" en "+r.nNotas+" nota"+(r.nNotas===1?"":"s")+
+              " todavía sin registrar.")+'">'+fmt(r.quedaN,r.quedaN>0)+'</b>'+
+            '<div class="sub" style="font-size:10.5px">'+r.nNotas+' nota'+(r.nNotas===1?"":"s")+' · '+fmt(r.notas)+'</div>'
+            : '<span class="sub">—</span>')+'</td>' : '')+
         '<td style="padding:6px 8px"><div class="barra'+(pasado?" x":"")+'" title="'+pct.toFixed(0)+'% del presupuesto ejecutado"><i style="width:'+pct.toFixed(1)+'%"></i></div></td>'+
         '<td style="padding:2px 4px"><button class="borrar" data-acc="rubro-igualar" '+
           'title="Igualar el presupuesto de este rubro a su gasto real, sin bajar de sus permanentes activos.">=</button></td>'+
       '</tr>';
-    }).join("")+'</tbody></table></div></div>';
+    }).join("")+'</tbody></table></div>'+
+    /* Una nota sin rubro —o con un rubro que ya no existe— no cae en ninguna
+       fila. Callarla sería esconder plata anotada: se dice cuánta y cuántas. */
+    (function(){
+      var vivas=notasVivas(k);
+      if(!vivas.length && !notasSinCorte().length) return "";
+      var enFila=0;
+      filas.forEach(function(r){ enFila+=r.nNotas||0; });
+      var sueltas=vivas.filter(function(n){
+        return !filas.some(function(r){ return r.cat===n.cat; }); })
+        .concat(notasSinCorte());
+      if(!sueltas.length) return "";
+      return '<div class="sub" style="margin-top:8px;font-size:12.5px" data-t="notasSueltas" title="'+esc(
+        "Notas anotadas en la app satélite que no caen en ninguna fila: sin rubro elegido, con un "+
+        "rubro que ya no existe, o sin corte anotado. No se pierden, pero tampoco descuentan de "+
+        "ningún presupuesto. Se arreglan desde la satélite.")+'">'+
+        '<b>'+sueltas.length+'</b> nota'+(sueltas.length===1?"":"s")+' sin rubro &middot; '+
+        '<b style="font-variant-numeric:tabular-nums">'+fmt(notasSuma(sueltas))+'</b>'+
+        ' &mdash; no descuentan de ningún rubro</div>';
+    })()+
+    '</div>';
 }
 
 /* ---------------- MOSAICO DE RUBROS ----------------
@@ -4619,6 +4966,15 @@ document.addEventListener("click", function(ev){
       return;
     S[cp].splice(ix,1); guardar(); abreAjustes("listas"); return;
   }
+  /* Notas cubiertas · va ANTES del guardián de la grilla de pegado: este panel
+     se abre justo después de guardar, cuando esa grilla ya se cerró y B es null. */
+  if(acc==="cub-guardar"){ cubrirGuardar(); return; }
+  if(acc==="cub-todos"){
+    if(!CUB) return;
+    var todas=CUB.filas.every(function(x){ return x.tomar; });
+    CUB.filas.forEach(function(x){ x.tomar=!todas; });
+    pintaCubrir(); return; }
+
   if(acc==="pegar-bloque"){ abrirPegado(); return; }
 
   /* --- grilla de pegado --- */
@@ -4849,6 +5205,23 @@ document.addEventListener("input", function(ev){
 });
 document.addEventListener("change", function(ev){
   var t=ev.target, c=t.getAttribute&&t.getAttribute("data-c");
+
+  /* fila de nota por cubrir: solo marcar y desmarcar */
+  var cbc=t.getAttribute&&t.getAttribute("data-cubc");
+  if(cbc==="tomar" && CUB){
+    var trb=t.closest("tr[data-cub]"); if(!trb) return;
+    var xb=CUB.filas[+trb.getAttribute("data-cub")]; if(!xb) return;
+    xb.tomar=t.checked;
+    /* Se repinta solo el botón: repintar la tabla entera perdería el foco y
+       haría saltar la lista mientras se destildan varias seguidas. */
+    var bt=document.querySelector('[data-t="btnCubrir"]');
+    if(bt){
+      var nn=CUB.filas.filter(function(x){ return x.tomar; }).length;
+      bt.textContent="Dar por cubierta"+(nn===1?"":"s")+(nn?" ("+nn+")":"");
+      bt.disabled=!nn; bt.style.opacity=nn?"":".5";
+    }
+    return;
+  }
 
   /* fila de crédito del pegado: marcar, elegir rubro y forma de pago */
   var crc=t.getAttribute&&t.getAttribute("data-crc");
@@ -5386,6 +5759,17 @@ function qPasteVertical(lines){
                     esCred:true, pagoTj:esPn, neg:true});
         cur=null; return;
       }
+      /* Guion antes del número: la columna de cargo venía vacía, así que el
+         importe está en la de crédito. Vale por sí solo, sin mirar el texto. */
+      var ord=cur.orden||[], iG=ord.indexOf("g"), iN=ord.indexOf("n");
+      if(iG>=0 && iN>=0 && iG<iN && vs.length && vs[0]>0.005){
+        var esPg=qEsPagoTarjeta(desc);
+        if(esPg) skip.pago++; else skip.cred++;
+        fuera.push({fecha:cur.fecha, desc:desc, monto:vs[0], moneda:cur.moneda||"Lps",
+                    motivo:esPg?"pago de tarjeta o traslado":"crédito o abono recibido",
+                    esCred:true, pagoTj:esPg});
+        cur=null; return;
+      }
       if(cur.tipoHint==="Ingreso"||qEsPagoTarjeta(desc)){
         if(vs.some(function(v){return v>0.005;})){
           var esP=qEsPagoTarjeta(desc), esCr=(cur.tipoHint==="Ingreso");
@@ -5409,7 +5793,7 @@ function qPasteVertical(lines){
     var dm=l.match(dateRe);
     if(dm){ fin(); var y=dm[3]; if(y.length===2) y="20"+y;
       cur={fecha:y+"-"+qPad(dm[2])+"-"+qPad(dm[1]), desc:"", ref:"", nums:[],
-           moneda:"Lps", tipoHint:null, tarjeta:tAct}; return; }
+           orden:[], moneda:"Lps", tipoHint:null, tarjeta:tAct}; return; }
     var mt=qMarcaTarjeta(l);
     if(mt){ fin(); tAct=(mt==="—"?"":mt); if(tarjetas.indexOf(tAct)<0) tarjetas.push(tAct); return; }
     if(/^total\b/i.test(l)){ fin(); return; }
@@ -5420,22 +5804,171 @@ function qPasteVertical(lines){
     if(/^(EUR|€)$/i.test(l)){ cur.moneda="EUR"; return; }
     if(/^d[ée]bito$/i.test(l)){ cur.tipoHint="Egreso"; return; }
     if(/^cr[ée]dito$/i.test(l)){ cur.tipoHint="Ingreso"; return; }
+    /* Ficohsa copia sus dos columnas una debajo de la otra y rellena la vacía
+       con un guion. El ORDEN es lo que dice qué es: número y después guion es
+       un cargo; guion y después número es un crédito. Sin esto, un pago o una
+       devolución entrarían como gasto. */
+    if(/^[-—–]{1,3}$/.test(l)){ (cur.orden=cur.orden||[]).push("g"); return; }
     if(isRef(l)){ if(!cur.ref) cur.ref=l.replace(/[,\s]/g,""); return; }
     var nvS=qParseNum(l);
     var nv=(nvS==null?null:Math.abs(nvS));
     if(nv!=null){ var mo=qMoneda(l); if(mo!=="Lps") cur.moneda=mo;
+      (cur.orden=cur.orden||[]).push("n");
       cur.nums.push({v:nv,raw:l,dec:qTieneDecimales(l),neg:(nvS<-0.005)}); return; }
     if(!cur.desc&&/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(l)) cur.desc=l.replace(/\s{2,}/g," ").trim();
   });
   fin();
   return {rows:recs, skipped:skip, fuera:fuera, tarjetas:tarjetas.filter(Boolean)};
 }
+/* ---------- Ficohsa · el PDF de "últimos movimientos" ----------------------
+   La banca en línea de Ficohsa no deja seleccionar texto, así que el estado
+   completo sale de un PDF exportado. Al copiarlo, las columnas vacías
+   desaparecen y TODOS los renglones quedan pegados en una sola línea:
+
+     000006-XXXXX 8317 27/07/2026 GRACIAS POR SU PAGO HNL 0.00 HNL 20,916.00
+     000545-XXXXX 3715 05/08/2026 DUNKIN DONUTS DD24 CAJ ... HNL 0.00 HNL 174.16
+
+   Lo único que corta un renglón del siguiente es el número de tarjeta, que
+   tiene una forma inconfundible: seis dígitos, unas X y cuatro dígitos. Por ahí
+   se parte.
+
+   Las columnas son: tarjeta · fecha · descripción · importe original · débito ·
+   crédito. Como las vacías no se copian, quedan DOS importes: el original
+   —casi siempre 0.00— y el de verdad. Se toma el último.
+
+   Y acá hay un límite honesto: al desaparecer la columna vacía, un cargo y un
+   crédito quedan escritos IGUAL. La única pista es el texto. Se reconocen los
+   pagos y los abonos por su descripción; cualquier otro crédito con un texto
+   raro va a entrar como gasto, y hay que corregirlo a mano. En el estado de
+   cuenta de la página web no pasa: ahí sí viene el guion de la columna vacía. */
+/* El número de tarjeta SOLO cuenta si viene seguido de la fecha en el mismo
+   renglón: así es como el PDF arma cada movimiento. La pantalla de movimientos
+   actuales también trae un número de tarjeta, pero suelto en su cabecera, y ese
+   pegado lo tiene que leer el lector vertical de siempre. */
+var Q_FIC_TARJ=/\d{6}\s*-\s*X{3,}\s*-?\s*\d{4}[ \t]+\d{1,2}\/\d{1,2}\/\d{2,4}/g;
+var Q_FIC_INI=/^\s*\d{6}\s*-\s*X{3,}\s*-?\s*\d{4}\b/;
+var Q_FIC_CRED=/GRACIAS POR SU PAGO|SU PAGO|DEVOLUCI[OÓ]N|REVERSI[OÓ]N|NOTA DE CR[EÉ]DITO|ABONO|BONIFICACI[OÓ]N|CASH ?BACK|REEMBOLSO/i;
+function qEsFicohsa(texto){
+  Q_FIC_TARJ.lastIndex=0;
+  return (String(texto||"").match(Q_FIC_TARJ)||[]).length>0;
+}
+/* ---------- Ficohsa · el Excel exportado -----------------------------------
+   Mucho mejor que el PDF, y por un motivo concreto: acá la columna vacía SÍ se
+   copia, como un tabulador de más. Las columnas son
+
+     tarjeta · fecha · descripción · (vacía) · importe original · (vacía) · débito · crédito
+
+   así que el importe cae en la columna 6 si es un cargo y en la 7 si es un
+   crédito. No hay que adivinar por el texto: la posición lo dice.
+
+   Se mide la distancia desde la columna del "importe original" en vez de mirar
+   la última celda, porque los tabuladores del final se pierden a veces al
+   copiar y esa distancia es interior: no se puede recortar. */
+function qFicohsaExcel(lineas){
+  var rows=[], fuera=[], skip={pago:0,cred:0};
+  var reMon=/^(LPS|HNL|USD|US\$|CAD|CDN|EUR)\b/i;
+  lineas.forEach(function(l){
+    var c=String(l).split("\t");
+    if(c.length<4) return;
+    var fecha="", iF=-1;
+    for(var i=0;i<c.length;i++){ var d=qParseDate(c[i].trim()); if(d){ fecha=d; iF=i; break; } }
+    if(!fecha) return;
+    /* importes con su columna */
+    var imps=[];
+    for(var j=iF+1;j<c.length;j++){
+      var t=c[j].trim(); if(!t || !reMon.test(t)) continue;
+      var v=qParseNum(t); if(v==null) continue;
+      imps.push({v:v, mon:qMoneda(t), col:j});
+    }
+    if(!imps.length) return;
+    var org=imps[0], ult=imps[imps.length-1];
+    var val=Math.abs(ult.v);
+    if(val<=0.005) return;
+    /* descripción: el texto entre la fecha y el primer importe */
+    var desc="";
+    for(var q=iF+1;q<org.col;q++){ var x=c[q].trim(); if(x) desc+=(desc?" ":"")+x; }
+    desc=qLimpiaDesc(desc) || "(sin descripción)";
+
+    /* La columna manda. Si solo hubo un importe no hay distancia que medir y
+       ahí sí decide el texto, que es lo único que queda. */
+    var esCred;
+    if(imps.length>1) esCred=((ult.col-org.col)>=3);
+    else esCred=Q_FIC_CRED.test(desc);
+    if(ult.v<-0.005) esCred=true;
+
+    if(esCred){
+      var esPg=/PAGO/i.test(desc);
+      if(esPg) skip.pago++; else skip.cred++;
+      fuera.push({fecha:fecha, desc:desc, monto:val, moneda:ult.mon,
+                  motivo:esPg?"pago de tarjeta o traslado":"crédito o abono recibido",
+                  esCred:true, pagoTj:esPg});
+      return;
+    }
+    rows.push({fecha:fecha, desc:desc, monto:String(val), moneda:ult.mon,
+               cat:"", pago:"", tarjeta:""});
+  });
+  return {rows:rows, skipped:skip, fuera:fuera, tarjetas:[]};
+}
+function qPasteFicohsa(texto){
+  /* Con tabuladores, cada renglón trae sus columnas: se lee por posición. */
+  var ls=String(texto||"").split(/\r?\n/).filter(function(l){ return l.trim()!==""; });
+  var conTab=ls.filter(function(l){ return l.indexOf("\t")>=0 && Q_FIC_INI.test(l); });
+  if(conTab.length) return qFicohsaExcel(conTab);
+  var t=String(texto||"").replace(/\s+/g," ").trim();
+  /* Partir donde arranca cada número de tarjeta. */
+  var cortes=[], m;
+  Q_FIC_TARJ.lastIndex=0;
+  while((m=Q_FIC_TARJ.exec(t))!==null) cortes.push(m.index);
+  var trozos=[];
+  for(var i=0;i<cortes.length;i++)
+    trozos.push(t.slice(cortes[i], (i+1<cortes.length)? cortes[i+1] : t.length));
+
+  var rows=[], fuera=[], skip={pago:0,cred:0};
+  var reImp=/(LPS|HNL|USD|US\$|CAD|CDN|EUR)\s*(-?[\d.,]+)/gi;
+  trozos.forEach(function(tr){
+    /* fuera el número de tarjeta */
+    var resto=tr.replace(/^\s*\d{6}\s*-\s*X{3,}\s*-?\s*\d{4}\s*/i,"");
+    var fm=resto.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+    if(!fm) return;
+    var fecha=qParseDate(fm[1]); if(!fecha) return;
+    var tras=resto.slice(resto.indexOf(fm[1])+fm[1].length);
+
+    /* todos los importes con su moneda, en orden */
+    var imps=[], mm; reImp.lastIndex=0;
+    while((mm=reImp.exec(tras))!==null){
+      var v=qParseNum(mm[2]);
+      if(v!=null) imps.push({v:v, mon:qMoneda(mm[1]), i:mm.index, largo:mm[0].length});
+    }
+    if(!imps.length) return;
+    var ult=imps[imps.length-1];
+    var desc=qLimpiaDesc(tras.slice(0, imps[0].i).trim());
+    if(!desc) desc="(sin descripción)";
+    var val=Math.abs(ult.v);
+    if(val<=0.005) return;                       /* renglón sin importe: no es nada */
+
+    if(Q_FIC_CRED.test(desc) || ult.v<-0.005){
+      var esPg=/PAGO/i.test(desc);
+      if(esPg) skip.pago++; else skip.cred++;
+      fuera.push({fecha:fecha, desc:desc, monto:val, moneda:ult.mon,
+                  motivo:esPg?"pago de tarjeta o traslado":"crédito o abono recibido",
+                  esCred:true, pagoTj:esPg});
+      return;
+    }
+    rows.push({fecha:fecha, desc:desc, monto:String(val), moneda:ult.mon,
+               cat:"", pago:"", tarjeta:""});
+  });
+  return {rows:rows, skipped:skip, fuera:fuera, tarjetas:[]};
+}
+
 /* ¿Vertical (un dato por línea) u horizontal (la fila entera en una línea)?
    Lo decide DÓNDE ESTÁ LA FECHA, no la presencia de tabuladores: el estado de
    cuenta de Promerica es vertical y aun así trae tabuladores en sus líneas de
    "Total en lempiras" y en los separadores de tarjeta. Confiar en el tabulador
    partía ese estado de cuenta en una fila por dato — todo desordenado. */
 function qParsePaste(text){
+  /* Ficohsa primero: su PDF llega todo en una línea y ninguna de las otras dos
+     lecturas lo entendería. Se reconoce por el número de tarjeta. */
+  if(qEsFicohsa(text)) return qPasteFicohsa(text);
   var lines=String(text||"").split(/\r?\n/).map(function(l){return l.trim();}).filter(function(l){return l!=="";});
   if(!lines.length) return {rows:[], skipped:{pago:0,cred:0}, fuera:[], tarjetas:[]};
   var sola=0, enLinea=0;
@@ -6425,6 +6958,12 @@ function bGuardar(){
       guardar(); render();
       colaCuotas=pendCuotas.slice(1);
       setTimeout(function(){ abreCuotas(pendCuotas[0]); },250);
+    } else {
+      /* Sin cuotas que preguntar: es el momento de limpiar las notas que este
+         pegado ya cubrió. Va después de guardar, nunca antes: primero el
+         dinero queda registrado, y recién ahí se propone soltar el recordatorio. */
+      CUB=cubrirPropuesta(k,nuevos);
+      if(CUB) setTimeout(abreCubrir,250);
     }
     toast(guardadas+" guardadas"+
       (ligados?" &middot; "+ligados+" permanente"+(ligados===1?"":"s")+" dado"+(ligados===1?"":"s")+" por pagado"+(ligados===1?"":"s"):"")+

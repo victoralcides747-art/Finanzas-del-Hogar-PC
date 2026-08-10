@@ -40,6 +40,15 @@ input,select,textarea{font:inherit;color:inherit}
 
 /* ── cabecera ─────────────────────────────────────────────────────── */
 header{background:var(--card);border-bottom:1px solid var(--linea);position:sticky;top:0;z-index:40}
+/* Cuenta abierta: la casa de siempre va sin color, como estaba. Cualquier otra
+   tiñe la barra entera, para no confundirse de números en un aparato
+   compartido. El tono es tenue: distingue, no grita. */
+header.cta{background:var(--cta-bg);border-bottom-color:var(--cta-linea)}
+header.cta .marca{color:var(--cta-tx)}
+header.cta .tab:hover{background:rgba(0,0,0,.05)}
+.cta-nom{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--cta-tx);background:rgba(255,255,255,.6);border:1px solid var(--cta-linea);
+  border-radius:6px;padding:2px 7px;white-space:nowrap}
 .hrow{max-width:1720px;margin:0 auto;padding:7px 16px;display:flex;align-items:center;gap:12px}
 .marca{font-weight:650;letter-spacing:-.2px;white-space:nowrap;font-size:14px}
 .tabs{display:flex;gap:2px;margin-left:4px}
@@ -409,6 +418,7 @@ button.ct-v.c-plan:hover{background:#e6effc}
 <header>
   <div class="hrow">
     <div class="marca">Finanzas del Hogar</div>
+    <span id="ctaNom" data-t="cuentaBarra"></span>
     <nav class="tabs">
       <button class="tab" data-tab="hoy" id="tab-hoy">Hoy</button>
       <button class="tab" data-tab="mov" id="tab-mov">Movimientos</button>
@@ -493,31 +503,6 @@ var PRESTAMO_BASE=[{
 var ICONO_512="data:image/png;base64,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";
 var ICONO_MASK="data:image/png;base64,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";
 var ICONO_192="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAADdUlEQVR42u3dy20UURCG0b4lMvBiJCdADOyR7DSQiIOF40AiDZDYE4MTGKkXxGAiQPP0TNf9z4lg3F3frW78YCwbs9s9vi1Ma133Y0ufZxh2kqMYhp7kGIbBJzmEYfBJDmEYfJJDGAaf5BDK8NPJtWdsGHySt0EZfpK3QRl+kiMow09yBGX4SY6gDD/JEZThJzmCMvwkR1CGn+QIyvCTHEG5TCQrpz/JW6AMP8kReATCI5DTn9QtYANgAzj9Sd0CNgA2gNOf1C1gA2ADOP1J3QI2ADYARAfg8YfUxyAbABsABAACgCzDCzA2AAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAHABn3o9GEfvvx2x5r4++Nzi8/Z4s+iGHwhxD4CGf7etn7/ysUj+T6Wi0by/SwXi+T76p9Biba5AJz+toANAAIAAYAAQACQEECXH6JijvtrA2ADOCVIva/lYpF8P8tFI/k+lotH8v1r9R9l+zkhgx8dAMQ9AoEAQAAgABAACAAEAAKAs7X647jPL3/csQN+fvvkIpygxXeCDb4QIgMw+EKIfQcw/K6jl2BIDMCp5XraAJAYgNPKdbUBQAAgABAAxATgO5euqw0AyQE4rVxPGwCSA3BquY634PcBDL4AunxYIRj86ADASzAIAAQAAgABgABAACAAOFarvw36/dfrpj/f16ePJqqZFt8J3vrgC8EjkOFv/pkFYJB8dgEYIF+DAAyOr0UAIAAnpq9JACAAEAAIAAQAAngXM/4cjZ8NEgAIIPHEdPoLIHZwDL8AYgfI8AsgdpAMfx+t/jaoX4kkOgCIewQCAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQACkB7Cu++EykGhd98MGwCMQCAAEAIEBeBEm8QXYBsAGcAkQgMcgAh9/bABsgP+VAbOf/jYANsChQmDW098GwAY4thSY7fS3AbABTi0GZjn9D24AETDz8HsEwiPQpQVB19P/6A0gAmYc/pMegUTAbMN/8juACJhp+M96CRYBswz/WQGIgFmG/+wARMAMw39RACKg+/BfHIAI6Dz8y7IsVx3e3e7xzW2hw+BfbQPYBnQd/qtvANuALoP/7gEIgQ5PFTd7ZBECW3ycvvkzuxDY0nvkXV9axcA9hn4zAYjCsN/bP+WvSUER4uuMAAAAAElFTkSuQmCC";
-(function manifiesto(){
-  try{
-    if(!/^https?:$/.test(location.protocol)) return;   /* abierto como archivo: no aplica */
-    var aqui=location.href.split("#")[0].split("?")[0];
-    var man={
-      /* Identidad propia: la satélite vive en la misma carpeta del mismo sitio,
-         así que sin esto Android podría tratarlas como la misma app instalada. */
-      id:"finanzas-hogar-madre",
-      name:"Finanzas del Hogar", short_name:"Finanzas",
-      description:"Ingresos, gastos, presupuesto y tarjetas por ventana.",
-      start_url:aqui, scope:aqui.replace(/[^\/]*$/,""),
-      display:"standalone", orientation:"any", lang:"es", dir:"ltr",
-      background_color:"#17171a", theme_color:"#2a78d6",
-      icons:[
-        {src:ICONO_192, sizes:"192x192", type:"image/png", purpose:"any"},
-        {src:ICONO_512, sizes:"512x512", type:"image/png", purpose:"any"},
-        {src:ICONO_MASK,sizes:"512x512", type:"image/png", purpose:"maskable"}
-      ]
-    };
-    var url=URL.createObjectURL(new Blob([JSON.stringify(man)],{type:"application/manifest+json"}));
-    var l=document.createElement("link"); l.rel="manifest"; l.href=url;
-    l.setAttribute("data-t","manifiesto");
-    document.head.appendChild(l);
-  }catch(e){ /* que no se instale nunca puede tumbar la app */ }
-})();
 
 /* ---------- cuenta ----------------------------------------------------------
    Una sola app, varias casas. La cuenta vive en el aparato, no en los datos:
@@ -544,10 +529,67 @@ function cuentaCambiar(nombre){
   return c;
 }
 var CUENTA=cuentaActual();
+/* Colores de cuenta. La original no lleva ninguno: su pantalla queda como
+   siempre estuvo. Las demás toman un tono tenue, fijo por nombre para que no
+   cambie de un día para otro. */
+var CUENTA_TONOS=[
+  {bg:"#f2eefb", linea:"#d8cdee", tx:"#5b4a86", tema:"#8b74c4"},   /* morado */
+  {bg:"#eef7f2", linea:"#c9e2d5", tx:"#3f6b56", tema:"#5da183"},   /* verde  */
+  {bg:"#fdf3e8", linea:"#eeddc4", tx:"#7a5a2e", tema:"#c79a55"},   /* ámbar  */
+  {bg:"#fceef4", linea:"#eecfdd", tx:"#7a3f5c", tema:"#c0759a"}    /* rosa   */
+];
+var CUENTA_DICHO={ claudia:0 };            /* pedido explícito: claudia, morada */
+function cuentaTono(){
+  if(CUENTA===CUENTA_ORIGINAL) return null;
+  if(CUENTA_DICHO[CUENTA]!=null) return CUENTA_TONOS[CUENTA_DICHO[CUENTA]];
+  var h=0; for(var i=0;i<CUENTA.length;i++) h=(h*31+CUENTA.charCodeAt(i))%997;
+  return CUENTA_TONOS[h%CUENTA_TONOS.length];
+}
+function pintaCuenta(){
+  var t=cuentaTono(), h=document.querySelector("header"), n=document.getElementById("ctaNom");
+  if(!h) return;
+  if(!t){ h.classList.remove("cta"); if(n) n.innerHTML=""; return; }
+  h.style.setProperty("--cta-bg",t.bg);
+  h.style.setProperty("--cta-linea",t.linea);
+  h.style.setProperty("--cta-tx",t.tx);
+  h.classList.add("cta");
+  if(n) n.innerHTML='<span class="cta-nom" title="'+
+    esc("Cuenta abierta. Sus datos son solo suyos: otro documento en la nube y otra copia en este "+
+        "aparato. Para cambiar, bloqueá la app y elegí «cambiar» en la pantalla del PIN.")+
+    '">'+esc(CUENTA)+'</span>';
+}
 /* La cuenta de siempre conserva su llave y su documento tal cual estaban: nada
    que migrar, nada que se pueda perder en el camino. */
 var LLAVE_BASE="finanzasHogarRodVit_v1";
 var DOC_NUBE=(CUENTA===CUENTA_ORIGINAL)? "estado" : CUENTA;
+
+/* El manifiesto se arma acá, ya sabiendo qué cuenta está abierta: así el color
+   de la barra del sistema al instalarla coincide con el de la barra de la app. */
+(function manifiesto(){
+  try{
+    if(!/^https?:$/.test(location.protocol)) return;   /* abierto como archivo: no aplica */
+    var aqui=location.href.split("#")[0].split("?")[0];
+    var man={
+      /* Identidad propia: la satélite vive en la misma carpeta del mismo sitio,
+         así que sin esto Android podría tratarlas como la misma app instalada. */
+      id:"finanzas-hogar-madre",
+      name:"Finanzas del Hogar", short_name:"Finanzas",
+      description:"Ingresos, gastos, presupuesto y tarjetas por ventana.",
+      start_url:aqui, scope:aqui.replace(/[^\/]*$/,""),
+      display:"standalone", orientation:"any", lang:"es", dir:"ltr",
+      background_color:"#17171a", theme_color:(cuentaTono()? cuentaTono().tema : "#2a78d6"),
+      icons:[
+        {src:ICONO_192, sizes:"192x192", type:"image/png", purpose:"any"},
+        {src:ICONO_512, sizes:"512x512", type:"image/png", purpose:"any"},
+        {src:ICONO_MASK,sizes:"512x512", type:"image/png", purpose:"maskable"}
+      ]
+    };
+    var url=URL.createObjectURL(new Blob([JSON.stringify(man)],{type:"application/manifest+json"}));
+    var l=document.createElement("link"); l.rel="manifest"; l.href=url;
+    l.setAttribute("data-t","manifiesto");
+    document.head.appendChild(l);
+  }catch(e){ /* que no se instale nunca puede tumbar la app */ }
+})();
 
 /* ---------- almacenamiento ---------- */
 var LLAVE=(CUENTA===CUENTA_ORIGINAL)? LLAVE_BASE : LLAVE_BASE+"__"+CUENTA;
@@ -957,6 +999,7 @@ var appArrancada=false;
 function arrancarApp(){
   if(appArrancada) return; appArrancada=true;
   ocultarPIN();
+  pintaCuenta();
   cargar(); cargarNormaliza(); render();
   nubeEstado(SESION?"":"off");
   sincronizarDesdeNube();
@@ -3946,7 +3989,22 @@ function abreAjustes(seccion){
           '<td style="text-align:right;padding:7px 8px">'+n+'</td>'+
           '<td><button class="borrar" data-acc="ventana-borrar" title="Borrar ventana y sus movimientos">×</button></td></tr>';
       }).join("")+'</tbody></table></div>'+
-      '<div class="barra-h" style="margin-top:10px"><button class="btn gh peq" data-acc="ventana-nueva">+ Nueva ventana</button></div></div>';
+      /* Antes solo se podía agregar la siguiente a la última. Ahora los dos
+         selectores vienen con esa misma sugerencia puesta, así que agregar la
+         que sigue es un clic igual que antes, pero se puede cambiar a
+         cualquiera: sirve para cargar una ventana vieja que faltaba. */
+      (function(){
+        var sig=siguienteVentana();
+        return '<div class="barra-h" style="margin-top:10px" data-t="altaVentana">'+
+          '<span class="sub">Agregar</span>'+
+          '<select class="cel" data-t="nvPer" style="width:112px" '+
+            'title="Cualquiera de los doce cortes del año. Viene puesta la que sigue a la última.">'+
+            opciones(PERIODOS,sig.per,true)+'</select>'+
+          '<input class="cel" data-t="nvAnio" style="width:74px" value="'+esc(sig.anio)+'" '+
+            'title="Año de la ventana.">'+
+          '<button class="btn peq" data-acc="ventana-nueva" data-t="btnNuevaVentana">Agregar ventana</button>'+
+          '<span class="sub">no tiene que ser la que sigue</span></div></div>';
+      })();
   } else if(s==="listas"){
     function bloque(tit,campo,arr){
       var n=arr.length;
@@ -4568,13 +4626,30 @@ function sembrarPresupuesto(k){
   return {n:n, monto:red(tot/100)};
 }
 function nuevaVentana(){
+  /* Si el formulario de Ajustes está abierto, manda lo que él eligió ahí. Sin
+     formulario —o con basura escrita— se cae en la siguiente a la última, que
+     es como funcionaba antes. */
   var n=siguienteVentana();
+  var elPer=document.querySelector('[data-t="nvPer"]'), elAnio=document.querySelector('[data-t="nvAnio"]');
+  var enAjustes=!!(elPer && elAnio);
+  if(enAjustes){
+    var per=elPer.value, anio=parseInt(String(elAnio.value).replace(/[^0-9]/g,""),10);
+    if(PERIODOS.indexOf(per)<0){ toast("Elegí un corte de la lista."); return; }
+    if(!(anio>=2000 && anio<=2100)){ toast("El año tiene que estar entre 2000 y 2100."); return; }
+    n={anio:anio, per:per};
+  }
+  if(S.ventanas.some(function(v){ return v.anio===n.anio && v.per===n.per; })){
+    toast("La ventana "+n.per+" "+n.anio+" ya existe.",4000); return;
+  }
   S.ventanas.push(n); ordenaVentanas();
   var kN=K(n.anio,n.per);
   var r=heredarPermanentes(kN);          /* la lista de permanentes se hereda; el dinero NO */
   var sp=sembrarPresupuesto(kN);         /* y el presupuesto arranca en el piso de esos permanentes */
   S.ui.anio=n.anio; S.ui.per=n.per; S.ui.tab="hoy";
   guardar(); render();
+  /* render() repinta la app, no el modal que está encima: sin esto la ventana
+     recién creada no aparecía en la lista y parecía que el botón no hacía nada. */
+  if(enAjustes) abreAjustes("ventanas");
   var m=n.per+" "+n.anio+" &middot; sin movimientos";
   if(r.n) m+=" &middot; heredados "+r.nI+" ingreso"+(r.nI===1?"":"s")+" y "+
              r.nE+" egreso"+(r.nE===1?"":"s")+" permanentes, ninguno marcado";

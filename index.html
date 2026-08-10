@@ -156,9 +156,9 @@ h2 [title],label[title],.et[title]{border-bottom:1px dotted var(--tx3)}
 /* ── tablas ───────────────────────────────────────────────────────── */
 .tabla-cont{overflow:auto;border:1px solid var(--linea);border-radius:6px;background:var(--card)}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
-table[data-t="tablaMov"]{min-width:1010px}
+table[data-t="tablaMov"]{min-width:1048px}
 table[data-t="tablaPerm"]{min-width:940px}
-table[data-t="tablaPegado"]{min-width:1120px}
+table[data-t="tablaPegado"]{min-width:1158px}
 table[data-t="tablaRub"]{table-layout:fixed}
 table[data-t="tablaRub"] td:first-child,table[data-t="tablaHoyRub"] td:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 th{text-align:left;font-weight:650;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
@@ -185,6 +185,10 @@ tr.rub-clic:hover .rub-lnk{color:var(--plan-tx)}
 .rub-lnk:focus-visible{box-shadow:inset 0 0 0 1.5px var(--plan)}
 input.tienefx{box-shadow:inset 2px 0 0 var(--plan)}
 .mon-cel{display:flex;align-items:center;gap:3px;justify-content:flex-end}
+/* El importe manda en esta celda: se estira, el selector de moneda se encoge.
+   Sin el min-width:0 el input se comprime igual y corta la cifra. */
+.mon-cel .cel{flex:1 1 auto;min-width:0;text-align:right;font-variant-numeric:tabular-nums}
+.mon-cel .mon-sel{flex:0 0 auto}
 .mon-sel{border:0;background:none;color:var(--tx3);font-size:10.5px;padding:2px 0;cursor:pointer;
   outline:none;max-width:44px}
 .mon-sel:hover,.mon-sel:focus{color:var(--plan-tx);background:var(--plan-bg);border-radius:4px}
@@ -653,27 +657,77 @@ function tarjetaVacia(){
    completan los datos y se le respeta el nombre (para no romper el cruce con la
    forma de pago); si no existe, se crea. Después de eso queda todo a su mano:
    lo que edite o borre no vuelve a aparecer. */
-var TJ_DICTADAS=[
-  {clave:"economia", nombre:"EconoMía BAC", corte:12, pago:3, tope:1200,
-   benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
-          {que:"Educación",    pct:7,tipo:"cashback"}]},
-  {clave:"gascard",  nombre:"GasCard BAC",  corte:9,  pago:30, tope:300,
-   benes:[{que:"Gasolineras",  pct:7,tipo:"descuento"}]},
-  {clave:"promerica",nombre:"Promérica",    corte:19, pago:10, tope:1300,
-   benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
-          {que:"Farmacias",    pct:7,tipo:"cashback"}]}
-];
+/* Las tarjetas son de cada cuenta, no de la app. Antes esta lista era una sola
+   y se sembraba en cualquier cuenta nueva: la casa de al lado abría la app y
+   veía tarjetas ajenas. Ahora cada cuenta tiene la suya, y una cuenta sin
+   entrada acá arranca con la libreta vacía, que es lo correcto. */
+var TJ_SEMILLA={
+  victor:[
+    {clave:"economia", nombre:"EconoMía BAC", corte:12, pago:3, tope:1200, color:"amarillo",
+     benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
+            {que:"Educación",    pct:7,tipo:"cashback"}]},
+    {clave:"gascard",  nombre:"GasCard BAC",  corte:9,  pago:30, tope:300, color:"azul",
+     benes:[{que:"Gasolineras",  pct:7,tipo:"descuento"}]},
+    {clave:"promerica",nombre:"Promérica",    corte:19, pago:10, tope:1300, color:"naranja",
+     benes:[{que:"Supermercados",pct:7,tipo:"cashback"},
+            {que:"Farmacias",    pct:7,tipo:"cashback"}]}
+  ],
+  claudia:[
+    /* Ficohsa. El límite viene en dólares y se guarda tal cual, sin convertir:
+       es una referencia que se consulta durante meses y el cambio se mueve.
+       Beneficios y tope quedan en blanco: no los tengo, y no se inventan. */
+    {clave:"ficohsaplus", nombre:"FICOHSA plus", corte:10, pago:30, tope:0, color:"azul",
+     limite:4700, limMon:"USD", benes:[]},
+    {clave:"cashback",    nombre:"CashBack",     corte:19, pago:8,  tope:0, color:"naranja",
+     limite:4000, limMon:"USD", benes:[]}
+  ]
+};
+function tjSemilla(){ return TJ_SEMILLA[CUENTA] || []; }
 function sembrarTarjetasDictadas(){
-  TJ_DICTADAS.forEach(function(d){
+  tjSemilla().forEach(function(d){
     var t=(S.tarjetas||[]).filter(function(x){
       return tjClave(x.nombre).replace(/\s+/g,"").indexOf(d.clave)>=0;
     })[0];
     if(!t){ t=tarjetaVacia(); t.nombre=d.nombre; S.tarjetas.push(t); }
     t.corte=d.corte; t.pago=d.pago; t.tope=d.tope;
-    var col=TJ_COLORES_SEMILLA[d.clave];
-    if(col && !tjColor()[t.nombre]) tjColor()[t.nombre]=col;
+    if(d.limite){ t.limite=d.limite; t.limMon=d.limMon||"Lps"; }
+    if(d.color && !tjColor()[t.nombre]) tjColor()[t.nombre]=d.color;
     t.benes=d.benes.map(function(b){ return {que:b.que,pct:b.pct,tipo:b.tipo}; });
   });
+}
+/* Reparación de una sola vez: quitar las tarjetas que la versión anterior
+   sembró en la cuenta equivocada. Se borra SOLO lo que sigue idéntico a como
+   se sembró y no se usó en ningún movimiento de esta cuenta. Si ella le cambió
+   algo, o ya pagó con esa tarjeta, se queda: mejor una tarjeta de más que
+   borrarle algo suyo. */
+function limpiaTarjetasAjenas(){
+  var mias={}; tjSemilla().forEach(function(d){ mias[d.clave]=true; });
+  var ajenas={};
+  Object.keys(TJ_SEMILLA).forEach(function(c){
+    if(c===CUENTA) return;
+    TJ_SEMILLA[c].forEach(function(d){ if(!mias[d.clave]) ajenas[d.clave]=d; });
+  });
+  var usada={};
+  (S.movimientos||[]).forEach(function(m){ if(m.pago) usada[tjClave(m.pago)]=true; });
+  var quitadas=[];
+  S.tarjetas=(S.tarjetas||[]).filter(function(t){
+    var cl=tjClave(t.nombre).replace(/\s+/g,"");
+    var d=null;
+    Object.keys(ajenas).forEach(function(k){ if(cl.indexOf(k)>=0) d=ajenas[k]; });
+    if(!d) return true;                                  /* no es de otra cuenta */
+    if(usada[tjClave(t.nombre)]) return true;            /* ya se usó: no se toca */
+    var igual = (t.corte===d.corte && t.pago===d.pago && red(+t.tope||0)===red(d.tope||0) &&
+                 (t.benes||[]).length===(d.benes||[]).length);
+    if(!igual) return true;                              /* la editó: es suya */
+    quitadas.push(t.nombre);
+    return false;
+  });
+  quitadas.forEach(function(n){
+    if(tjColor()[n]) delete tjColor()[n];
+    Object.keys(S.tjPref||{}).forEach(function(r){ if(S.tjPref[r]===n) delete S.tjPref[r]; });
+    Object.keys(S.tjPago||{}).forEach(function(k){ if(S.tjPago[k]) delete S.tjPago[k][n]; });
+  });
+  return quitadas;
 }
 function tjClave(s){                      /* "Promérica" y "Promerica" son la misma */
   var t=String(s||"").toLowerCase().trim();
@@ -712,6 +766,9 @@ function normalizaTarjetas(){
   if(!S.tjPago||typeof S.tjPago!=="object"||Array.isArray(S.tjPago)) S.tjPago={};
   if(!S.tjColor||typeof S.tjColor!=="object"||Array.isArray(S.tjColor)) S.tjColor={};
   if(!S.prefs) S.prefs={};
+  /* La limpieza va ANTES de sembrar: primero se sacan las que no eran de esta
+     cuenta, y recién después se ponen las suyas. */
+  if(!S.prefs.tjPropias){ limpiaTarjetasAjenas(); S.prefs.tjPropias=true; S.prefs.tjDictadas=false; }
   if(!S.prefs.tjDictadas){ sembrarTarjetasDictadas(); S.prefs.tjDictadas=true; }
 }
 /* Tarjeta preferida por rubro. Un rubro, una tarjeta. Se guarda por NOMBRE de
@@ -2897,7 +2954,7 @@ function vistaMovimientos(){
       thOrd("fecha","Fecha",' style="width:112px"')+
       thOrd("tipo","Tipo",' style="width:88px"')+
       thOrd("desc","Comercio",' style="min-width:300px" title="El texto tal cual lo manda el banco: nombra el comercio, no lo que se compró. No conviene editarlo — de él dependen la detección de duplicados y la sugerencia de categoría."')+
-      thOrd("monto","Monto",' style="width:110px"')+
+      thOrd("monto","Monto",' style="width:148px"')+
       thOrd("cat","Categoría",' style="width:165px"')+
       thOrd("pago","Forma de pago",' style="width:158px"')+
       thOrd("motivo","Productos",' style="width:190px" title="Texto propio: qué se compró o se pagó. El banco solo dice el comercio."')+'<th class="plano" style="width:76px"></th>'+
@@ -3303,7 +3360,7 @@ function filaPerm(f){
         " registrados en el rubro «"+(f.cat||"Sin categoría")+"» sin ligar a este permanente. Marcar la casilla registra otros "+
         fmt(f.monto)+" encima: si es el mismo dinero, quedaría contado dos veces. Si ya entró, en vez de marcar, ligar el movimiento no hace falta — dejarlo sin marcar.")+
         '">ya entró '+fmt(yaEntro)+'</span> ':'')+
-      '<div class="mon-cel"><input class="cel" data-c="monto" inputmode="decimal" style="width:92px" value="'+esc(f.monto)+'">'+
+      '<div class="mon-cel"><input class="cel" data-c="monto" inputmode="decimal" style="width:120px" value="'+esc(f.monto)+'">'+
       selMoneda('data-c="monEnt"')+'</div>'+
       (f.fx?'<div class="sub fx-sello" title="'+esc("Este cobro se captura en "+(f.moneda||"otra moneda")+". El importe guardado es en lempiras, al cambio del día en que se capturó. Clic para volver a convertirlo con la tasa de hoy.")+
         '"><button class="ln" data-acc="perm-refx">'+esc(f.fx)+'</button></div>':'')+
@@ -5096,6 +5153,15 @@ document.addEventListener("click", function(ev){
     bResumen(); return;
   }
   if(acc==="cred-guardar"){ credGuardar(); return; }
+  if(acc==="cred-nodup" || acc==="cred-sidup"){
+    if(!B) return;
+    var trC=b.closest("tr[data-cr]"); if(!trC) return;
+    var csN=B.fuera.filter(function(x){ return x.esCred; });
+    var xN=csN[+trC.getAttribute("data-cr")]; if(!xN) return;
+    if(acc==="cred-nodup"){ xN.noRepe=true; xN.repe=null; xN.repeCred=null; }
+    else delete xN.noRepe;
+    bResumen(); return;
+  }
   if(acc==="b-perm-monto" || acc==="b-perm-pago"){
     var trp2=b.closest("tr[data-b]"); if(!trp2||!B) return;
     var iF=+trp2.getAttribute("data-b"), fF=B.filas[iF]; if(!fF) return;
@@ -6160,7 +6226,7 @@ function simRepe(a,b){
 /* Compara una fila (o movimiento) contra un movimiento ya registrado.
    Devuelve null, o el detalle de por qué se parecen. */
 function repeCompara(f,m){
-  var v0=cts(parseMonto(f.monto)), v1=cts(m.monto);
+  var v0=cts(parseMonto(f.monto)), v1=cts(parseMonto(m.monto));
   if(!v0||!v1) return null;
   var c0=qDescCore(f.desc), c1=qDescCore(m.desc);
   if(!c0||!c1) return null;
@@ -6211,6 +6277,57 @@ function bRepeEnBloque(){
     if(bVacia(f)||!f.fecha||!cts(parseMonto(f.monto))||!qDescCore(f.desc)) return;
     for(var j=0;j<vivas.length;j++){
       if(repeCompara(f,vivas[j].f)){ f.repeFila=vivas[j].i+1; return; }  /* fila 1-based */
+    }
+    vivas.push({f:f,i:i});
+  });
+}
+/* ═══════════ LO MISMO, PARA LOS CRÉDITOS ═══════════
+   Un crédito no pasa por la grilla: sale del pegado y se registra derecho. Eso
+   lo dejaba fuera de la única máquina que detecta repetidos, así que pegar dos
+   veces el mismo estado de cuenta volvía a meter la misma devolución sin decir
+   nada. Se compara con EL MISMO criterio que un débito —la misma función, las
+   mismas tolerancias, la ventana actual y la anterior— y además contra los
+   otros créditos del mismo pegado.
+   Un crédito se compara SOLO contra créditos: la devolución de L140 al lado de
+   la compra de L140 que la originó no es un duplicado, es lo esperable. */
+function credEsCred(m){
+  return m.origen==="credito" || cts(m.monto)<0;
+}
+/* El crédito todavía no es movimiento. Se le arma la forma que va a tener para
+   pasarlo por repeCompara sin duplicar la lógica: importe ya en lempiras y en
+   positivo, igual que el del movimiento contra el que se compara. */
+function credComoFila(x){
+  var mo=x.moneda||"Lps", t=(mo==="Lps"? 1 : fxTasa(mo));
+  if(!t) return null;
+  return {fecha:x.fecha, desc:x.desc, monto:String(red(Math.abs(+x.monto||0)*t)),
+          pago:x.pago||(B&&B.pago)||""};
+}
+function credRepetida(x){
+  var f=credComoFila(x);
+  if(!f||!f.fecha||!cts(parseMonto(f.monto))||!qDescCore(f.desc)) return null;
+  var kA=kAct(), kP=ventanaPrevia(kA), mejor=null;
+  [kA,kP].forEach(function(k){
+    if(!k) return;
+    movsDe(k).filter(credEsCred).forEach(function(m){
+      var r=repeCompara(f,{fecha:m.fecha, desc:m.desc, monto:Math.abs(m.monto),
+                           pago:m.pago, permId:m.permId});
+      if(!r) return;
+      if(repeMejor(mejor,r)) mejor={mov:m, k:k, dias:r.dias, tipo:r.tipo, sim:r.sim,
+                                    dif:r.dif, otroPago:!!r.otroPago, otra:(k!==kA)};
+    });
+  });
+  return mejor;
+}
+function credRepeEnBloque(creds){
+  var vivas=[];
+  creds.forEach(function(x,i){
+    x.repeCred=null;
+    var f=credComoFila(x);
+    if(!f||!f.fecha||!cts(parseMonto(f.monto))||!qDescCore(f.desc)) return;
+    /* Si él ya dijo que es distinto, no se le vuelve a avisar — pero sigue
+       sirviendo de referencia para los que vengan después. */
+    if(!x.noRepe) for(var j=0;j<vivas.length;j++){
+      if(repeCompara(f,vivas[j].f)){ x.repeCred=vivas[j].i+1; return; }  /* 1-based */
     }
     vivas.push({f:f,i:i});
   });
@@ -6621,7 +6738,7 @@ function pintaPegado0(){
         '<th class="plano" style="width:118px">Fecha</th>'+
         '<th class="plano" style="min-width:230px" title="El texto tal cual lo manda el banco: nombra el comercio, no lo que se compró. De él dependen la detección de duplicados y el reconocimiento de permanentes.">Comercio</th>'+
         '<th class="plano" style="width:170px" title="Texto propio: qué se compró o se pagó. Ayuda a diferenciar cobros parecidos y viaja con el movimiento al guardar.">Productos</th>'+
-        '<th class="plano" style="width:104px;text-align:right">Monto</th>'+
+        '<th class="plano" style="width:142px;text-align:right">Monto</th>'+
         '<th class="plano" style="width:152px">Categoría</th>'+
         '<th class="plano" style="width:150px">Forma de pago</th>'+
         '<th class="plano" style="width:290px" title="A qué permanente de la ventana corresponde el cobro. La app propone uno cuando la coincidencia es inequívoca y muestra su ficha completa —importe, forma de pago, rubro, productos— con en rojo lo que no calza. La elección es tuya: «ninguno» lo registra como gasto normal, otro lo liga a ese, y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.">Permanente</th>'+
@@ -6849,6 +6966,11 @@ function bResumen(){
      como INGRESO en dos clics. Nada se registra solo: arrancan desmarcados. */
   var creds=B.fuera.filter(function(x){ return x.esCred; });
   if(creds.length){
+    /* Repetidos: contra lo ya registrado y contra el propio pegado, con el mismo
+       criterio que un débito. Solo avisa — arrancan desmarcados igual. */
+    credRepeEnBloque(creds);
+    creds.forEach(function(x){ x.repe=x.noRepe? null : credRepetida(x); });
+    var nRepe=creds.filter(function(x){ return x.repe||x.repeCred; }).length;
     var totC=0; creds.forEach(function(x){
       var mo=x.moneda||"Lps", t=(mo==="Lps"?1:fxTasa(mo));
       totC+=cts(Math.abs(+x.monto||0)*(t||1)); });
@@ -6879,7 +7001,8 @@ function bResumen(){
           '<td style="padding:6px 8px">'+esc(x.desc||"(sin descripción)")+
             (x.pagoTj?'<div class="sub" style="font-size:10.5px;color:var(--avi-tx)" title="'+esc(
               "Por el texto parece el pago del corte de la tarjeta, no una devolución. Registrarlo contaría dos veces el mismo dinero: lo normal es dejarlo sin marcar.")+
-              '">parece un pago de tarjeta &middot; normalmente se deja fuera</div>':'')+'</td>'+
+              '">parece un pago de tarjeta &middot; normalmente se deja fuera</div>':'')+
+            credRepeHTML(x)+'</td>'+
           '<td class="num" style="padding:6px 8px">'+credMonHTML(x)+'</td>'+
           '<td><select class="cel" data-crc="como">'+
             '<option value="desc"'+(esDesc?" selected":"")+'>descuento de la tarjeta</option>'+
@@ -6892,7 +7015,9 @@ function bResumen(){
       '<button class="btn gh peq" data-acc="cred-todos">'+(nSel===creds.length?"Desmarcar todos":"Marcar todos")+'</button>'+
       '<button class="btn peq" data-acc="cred-guardar"'+(nSel?"":" disabled style=\"opacity:.5\"")+'>'+
         'Registrar '+(nSel?nSel:"")+'</button>'+
-      '<span class="sub">se guardan de una vez, sin pasar por la grilla</span></div></div>';
+      '<span class="sub">se guardan de una vez, sin pasar por la grilla</span>'+
+      (nRepe?'<span class="sub" data-t="credRepeCuenta" style="color:var(--avi-tx)">'+
+        nRepe+' con aviso de repetido</span>':'')+'</div></div>';
   }
   if(B.fuera.length){
     html+='<details style="margin-top:9px"><summary style="cursor:pointer">Dejé fuera <b>'+B.fuera.length+
@@ -6922,6 +7047,43 @@ function bResumen(){
   }
   var bg=document.querySelector('[data-t="btnGuardarBloque"]');
   if(bg){ bg.textContent=listas?("Guardar "+listas+" fila"+(listas===1?"":"s")):"Guardar"; bg.disabled=!listas; bg.style.opacity=listas?"":".5"; }
+}
+/* El aviso de repetido de un crédito. Dice contra QUÉ lo comparó, igual que en
+   la grilla, y deja marcarlo como distinto si de verdad son dos devoluciones
+   iguales. Nunca desmarca ni bloquea: los créditos ya arrancan desmarcados. */
+function credRepeHTML(x){
+  if(x.noRepe) return '<div class="sub" data-t="credNoRepe" style="font-size:10.5px">'+
+    'marcado como distinto '+
+    '<button class="chip" data-acc="cred-sidup" style="cursor:pointer;margin-left:4px" title="'+
+    esc("Volver a compararlo.")+'">revisar de nuevo</button></div>';
+  var t="", d="";
+  if(x.repeCred){
+    t="igual al crédito "+x.repeCred+" de este mismo pegado";
+    d="Dentro de este mismo pegado hay otro crédito con la misma fecha, el mismo importe y "+
+      "la misma descripción. Suele pasar cuando dos estados de cuenta se traslapan. "+
+      "Registrar uno solo, o los dos: la app no decide.";
+  } else if(x.repe){
+    var casi=(x.repe.tipo==="parecida");
+    t=(casi? "parecido a un crédito ya registrado" : "ya registrado")+
+      (x.repe.otra? " en "+nomVentana(x.repe.k) : "")+" el "+fmtF(x.repe.mov.fecha)+
+      (x.repe.dias? " ("+x.repe.dias+" día"+(x.repe.dias===1?"":"s")+" de diferencia)" : "")+
+      (casi&&x.repe.dif? " &middot; "+fmt(Math.abs(x.repe.dif))+" de diferencia" : "")+
+      (x.repe.otroPago? " &middot; otra forma de pago" : "");
+    d="«"+(x.repe.mov.desc||"")+"» por "+fmt(Math.abs(x.repe.mov.monto))+" del "+
+      fmtF(x.repe.mov.fecha)+" en "+nomVentana(x.repe.k)+
+      (x.repe.mov.pago? ", con "+x.repe.mov.pago : "")+". "+
+      (casi? "No es idéntico, pero el importe difiere en menos de "+fmt(TOL_REPE)+
+             ", la descripción se parece y hay menos de "+DIAS_REPE_CASI+" días. "
+           : "")+
+      "Se busca en esta ventana y en la anterior porque los bancos no dicen a qué corte "+
+      "pertenece el cargo. Se compara solo contra otros créditos. Registrarlo igual o "+
+      "dejarlo fuera: la app no decide.";
+  } else return "";
+  return '<div class="sub" data-t="credRepe" style="font-size:10.5px;color:var(--avi-tx)" title="'+
+    esc(d)+'">'+t+
+    '<button class="chip" data-acc="cred-nodup" style="cursor:pointer;margin-left:6px" title="'+
+    esc("Es otro crédito distinto que casualmente se parece. Deja de avisar por este.")+
+    '">es distinto</button></div>';
 }
 /* El importe de un crédito, ya en lempiras, con el original debajo si venía en
    otra moneda. Se convierte al capturar, no al mostrar. */
@@ -7128,6 +7290,7 @@ window.__casiPerm=casiPerm;
 window.__matchE=dentroTolEstricta;
 window.__repe=bRepetida;
 window.__repeCmp=repeCompara;
+window.__credRepe=credRepetida;
 window.__simRepe=simRepe;
 window.__match={tol:tolMonto, dentro:dentroTol, sim:simTexto, raiz:qRaiz, pago:pagoCoincide,
                 lee:leeCuotas, mesMas:mesMas, falta:faltaCuotas};

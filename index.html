@@ -379,10 +379,14 @@ tr.lista td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
 /* encabezados centrados y una línea de verdad entre filas: con casillas de seis
    renglones, la raya tenue de las demás tablas no alcanzaba para ver dónde
    empieza y dónde termina cada fila. */
-table[data-t="tablaPegado"] th,table[data-t="tablaPegado"] th.plano{text-align:center}
-table[data-t="tablaPegado"] tbody td{border-bottom:1px solid rgba(11,11,11,.22);vertical-align:top;padding-top:4px}
-table[data-t="tablaPegado"] tbody td .cel{margin-top:1px}
-table[data-t="tablaPegado"] tbody tr:last-child td{border-bottom:0}
+table[data-t="tablaPegado"] th,table[data-t="tablaPegado"] th.plano,
+table[data-t="tablaCreditos"] th,table[data-t="tablaCreditos"] th.plano{text-align:center}
+table[data-t="tablaPegado"] tbody td,table[data-t="tablaCreditos"] tbody td{
+  border-bottom:1px solid rgba(11,11,11,.22);vertical-align:top;padding-top:4px}
+table[data-t="tablaPegado"] tbody td .cel,table[data-t="tablaCreditos"] tbody td .cel{margin-top:1px}
+table[data-t="tablaPegado"] tbody tr:last-child td,
+table[data-t="tablaCreditos"] tbody tr:last-child td{border-bottom:0}
+table[data-t="tablaCreditos"]{min-width:1270px}
 select.cel.sin-elegir{text-align:center;color:var(--tx3)}
 /* ── cierres · mosaico ───────────────────────────────────────────── */
 .cie-fila td{cursor:pointer}
@@ -1413,21 +1417,41 @@ function permToca(f){
   if(!px.mes) return true;
   return px.mes <= mesDe(hoyISO());
 }
+/* ¿ESTE PERMANENTE CUENTA EN ESTA VENTANA?
+   Contar quiere decir tres cosas juntas: se presupuesta, es compromiso pendiente
+   y entra en el plan. Hay tres motivos para que NO cuente, y ninguno borra nada:
+     · está en pausa — decisión suya, y la pausa viaja con la lista a la ventana
+       siguiente hasta que él la quite;
+     · terminó de pagarse — su última cuota quedó atrás; un financiamiento que ya
+       se pagó no puede seguir apareciendo como plata que va a salir;
+     · no es mensual y su próximo cobro todavía no llegó.
+   El permanente sigue en la lista, visible y marcado, y si igual aparece un
+   cobro suelto se puede ligar a mano: lo único que se apaga es el pronóstico. */
+function permTerminado(f,k){ return cuotaVencida(f,k); }
+function permCuenta(f,k){ return permActivo(f) && !permTerminado(f,k) && permToca(f); }
 function permsPendientes(k){
-  return permsActivos(k).filter(function(f){
-    return (f.tipo||"Egreso")==="Egreso" && (+f.monto||0)>0 && !movDePerm(k,f.id) && permToca(f);
+  return permsK(k).filter(function(f){
+    return (f.tipo||"Egreso")==="Egreso" && (+f.monto||0)>0 && !movDePerm(k,f.id) && permCuenta(f,k);
   });
 }
 function permsDeRubro(k,cat){
-  return permsActivos(k).filter(function(p){
-    return (p.tipo||"Egreso")!=="Ingreso" && (p.cat||"Sin categoría")===cat && permToca(p);
+  return permsK(k).filter(function(p){
+    return (p.tipo||"Egreso")!=="Ingreso" && (p.cat||"Sin categoría")===cat && permCuenta(p,k);
   });
 }
 /* Los que existen pero este período no tocan: se muestran aparte para que no
    parezca que la app se los comió. */
 function permsNoTocan(k){
   return permsActivos(k).filter(function(f){
-    return (f.tipo||"Egreso")==="Egreso" && (+f.monto||0)>0 && !movDePerm(k,f.id) && !permToca(f);
+    return (f.tipo||"Egreso")==="Egreso" && (+f.monto||0)>0 && !movDePerm(k,f.id) &&
+           !permTerminado(f,k) && !permToca(f);
+  });
+}
+/* Y los que ya terminaron de pagarse. Tampoco desaparecen: se listan aparte y
+   fuera de los compromisos, para que se vea que la app dejó de contarlos. */
+function permsTerminados(k){
+  return permsActivos(k).filter(function(f){
+    return (f.tipo||"Egreso")==="Egreso" && (+f.monto||0)>0 && permTerminado(f,k);
   });
 }
 /* Los alias aprendidos son información de referencia, no dinero: por eso viven
@@ -2021,8 +2045,9 @@ function rubrosDe(k){
    Nada de esto es dinero real: vive en la proyección. */
 function ingresoPendiente(k){
   var porCat={}, det=[], tot=0;
-  permsActivos(k).forEach(function(f){
+  permsK(k).forEach(function(f){
     if((f.tipo||"Egreso")!=="Ingreso") return;
+    if(!permCuenta(f,k)) return;                        /* en pausa, terminado o no toca */
     if(movDePerm(k,f.id)) return;                       /* ya marcado: ya es real */
     /* La MISMA clave que los movimientos. Antes se caía al desc cuando el
        permanente no tenía rubro, y entonces la resta de abajo no calzaba nunca:
@@ -2143,7 +2168,8 @@ function cierre(k){
                 que entra en totales().
    La diferencia se calcula siempre como real − plan.                        */
 function planIngresos(k){
-  var c=0; permsActivos(k).forEach(function(p){ if((p.tipo||"Egreso")==="Ingreso") c+=cts(p.monto); });
+  var c=0; permsK(k).forEach(function(p){
+    if((p.tipo||"Egreso")==="Ingreso" && permCuenta(p,k)) c+=cts(p.monto); });
   return c/100;
 }
 /* La diferencia se muestra SIEMPRE como "a favor": positivo es bueno en las tres
@@ -2411,7 +2437,19 @@ function vistaHoy(){
   h+=panelFrescura(k);                 /* al final: se busca cuando hace falta */
   h+='</div>';
 
-  h+='<div class="pron" data-t="pronostico">'+
+  h+=panelPronostico(k);
+  h+='</div>';
+  return h;
+}
+/* ── LA PROYECCIÓN, APARTE ──────────────────────────────────────────────────
+   Se saca a su propia función para poder repintarla sola. Editar un presupuesto
+   cambia los compromisos y el saldo libre proyectado, pero repintar la tabla
+   entera perdería el foco a media cifra: se repinta esta tarjeta y nada más. */
+function panelPronostico(k){
+  var cmp=compromiso(k);
+  var pend=permsPendientes(k);
+  var totPend=0; pend.forEach(function(f){ totPend+=cts(f.monto); }); totPend/=100;
+  return '<div class="pron" data-t="pronostico">'+
     '<div class="tit" title="Cifras derivadas del presupuesto. No entran en los gastos reales ni modifican el saldo real.">Proyección &middot; fuera del saldo real</div>'+
     '<div class="pron-jefe">'+
       '<div class="pron-et">Saldo libre proyectado</div>'+
@@ -2435,6 +2473,25 @@ function vistaHoy(){
       }).join("")+'</div>':'')+
     /* Los periódicos que este mes no tocan: no cuentan como pendientes ni se
        presupuestan, pero se listan aparte para que se vea que siguen ahí. */
+    /* Los financiamientos que ya se terminaron de pagar: no cuentan en ningún
+       número de esta ventana, pero se listan para que se vea que siguen en la
+       lista y se puedan quitar. */
+    (function(){
+      var tm=permsTerminados(k);
+      if(!tm.length) return "";
+      var tt=0; tm.forEach(function(f){ tt+=cts(f.monto); });
+      return '<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--linea);font-size:12.5px;color:var(--tx3)" '+
+        'data-t="pronTerminados" title="'+esc(
+          "Permanentes cuya última cuota ya quedó atrás: terminaron de pagarse. No se presupuestan, no cuentan "+
+          "como compromiso y no entran en el plan de esta ventana ni de las siguientes. Siguen en la lista de "+
+          "Permanentes, marcados, por si aparece un cargo suelto que haya que ligar — y para poder quitarlos.")+'">'+
+        '<b>'+tm.length+'</b> permanente'+(tm.length===1?"":"s")+' que ya terminó'+(tm.length===1?"":"aron")+
+        ' de pagarse &middot; <b style="font-variant-numeric:tabular-nums">'+fmt(tt/100)+'</b> (fuera de los compromisos)</div>'+
+        '<div class="pron-lista" style="opacity:.62">'+tm.map(function(f){
+          return '<div><span>'+esc(f.desc||f.cat)+' <span class="sub">· última cuota '+
+            esc(f.ultimaCuota||f.hasta||"")+'</span></span><span>'+fmt(f.monto)+'</span></div>';
+        }).join("")+'</div>';
+    })()+
     (function(){
       var nt=permsNoTocan(k);
       if(!nt.length) return "";
@@ -2456,9 +2513,16 @@ function vistaHoy(){
     (cmp.libre<0?'<div class="avi">Negativo: los compromisos pendientes superan a lo disponible. '+
       'Reducir presupuesto en algún rubro o marcar los permanentes ya pagados.</div>':'')+
   '</div>';
-
-  h+='</div>';
-  return h;
+}
+/* Repintar SOLO la proyección y el cotejo. Editar un presupuesto cambia los dos
+   —cambia lo comprometido y con eso el saldo libre proyectado—, pero volver a
+   dibujar la pantalla entera se llevaría por delante el foco de la celda que
+   está escribiendo. Se reemplazan los dos nodos y nada más. */
+function repintaDerivados(){
+  /* el cotejo ya lo repinta repintaPieRubros(); lo que faltaba era esto */
+  var n=document.querySelector('[data-t="pronostico"]'); if(!n) return;
+  var d=document.createElement("div"); d.innerHTML=panelPronostico(kAct());
+  if(d.firstChild) n.parentNode.replaceChild(d.firstChild,n);
 }
 
 /* El recordatorio de las suscripciones con fecha de corte. Aparece solo cuando
@@ -3679,7 +3743,7 @@ function tablaPerms(tipo){
   var vencidos=lista.filter(function(f){ return permActivo(f)&&cuotaVencida(f,k); });
   var prev=ventanaPrevia(k), sufijo=ing?"I":"";
   var o=(ing? S.ui.ordPermI : S.ui.ordPerm)||{k:"desc",dir:1};
-  var total=0; lista.forEach(function(f){ if(permActivo(f)) total+=cts(f.monto); });
+  var total=0; lista.forEach(function(f){ if(permCuenta(f,k)) total+=cts(f.monto); });
   function th(campo,txt,extra){
     return '<th'+(extra||"")+'><button data-ordp'+(ing?"i":"")+'="'+campo+'">'+txt+
       (o.k===campo?(o.dir>0?" ↑":" ↓"):"")+'</button></th>';
@@ -6084,7 +6148,7 @@ document.addEventListener("input", function(ev){
   if(rr && c==="pres"){                       /* presupuesto por rubro */
     var p=presuDe(kAct()), cat=rr.getAttribute("data-cat");
     if(String(t.value).trim()==="") delete p[cat]; else p[cat]=parseMonto(t.value);
-    guardar(); repintaRubro(rr); return;
+    guardar(); repintaRubro(rr); repintaDerivados(); return;
   }
   if(c==="fxTasa"){                           /* tasa escrita a mano */
     var trf=t.closest("tr[data-fxm]"); if(!trf) return;
@@ -8258,32 +8322,42 @@ function bResumen(){
         '<b>descuento de la tarjeta</b> — se guarda como un egreso negativo con esa forma de pago, '+
         'así baja lo que esa tarjeta debe en este corte. Es lo que corresponde a una devolución o a un traslado.<br>'+
         '<b>ingreso</b> — plata que entró de verdad y no pertenece a ninguna tarjeta.</div>'+
-      '<div class="tabla-cont" style="margin-top:8px;max-height:34vh"><table data-t="tablaCreditos"><thead><tr>'+
-        '<th class="plano" style="width:30px"></th>'+
-        '<th class="plano" style="width:92px">Fecha</th>'+
-        '<th class="plano">Descripción</th>'+
-        '<th class="plano der" style="width:104px">Monto</th>'+
-        '<th class="plano" style="width:178px" title="Descuento de la tarjeta = egreso negativo con esa forma de pago, baja lo que esa tarjeta debe. Ingreso = plata que entró y no pertenece a ninguna tarjeta.">Registrar como</th>'+
-        '<th class="plano" style="width:180px">Rubro</th>'+
-        '<th class="plano" style="width:170px">Forma de pago</th>'+
+      '<div class="tabla-cont" style="margin-top:8px;max-height:40vh"><table data-t="tablaCreditos"><thead><tr>'+
+        '<th class="plano" style="width:100px">Fecha</th>'+
+        '<th class="plano" style="min-width:210px">Descripción</th>'+
+        '<th class="plano" style="width:120px">Monto</th>'+
+        '<th class="plano" style="width:172px" title="Descuento de la tarjeta = egreso negativo con esa forma de pago, baja lo que esa tarjeta debe. Ingreso = plata que entró y no pertenece a ninguna tarjeta.">Registrar como</th>'+
+        '<th class="plano" style="width:168px">Rubro</th>'+
+        '<th class="plano" style="width:160px">Forma de pago</th>'+
+        '<th class="plano" style="width:270px" title="'+esc(
+          "Lo que la app encontró que se parece a este crédito: otro crédito ya registrado, u otro de este mismo pegado. "+
+          "Se lee igual que en la grilla de arriba: el veredicto, de qué clase es la coincidencia, si calza exacto o en "+
+          "parte, y debajo el dato por dato con en verde lo que calza y en morado lo que no. Nada bloquea: la app avisa.")+'">Coincidencias</th>'+
+        '<th class="plano" style="width:190px" title="'+esc(
+          "Qué va a pasar con este crédito al pulsar Registrar. Ojo: acá el punto de partida es al revés que en la grilla "+
+          "de arriba. Un crédito NO es un gasto, así que ninguno entra salvo que lo marques; en la grilla, en cambio, "+
+          "entra todo salvo lo que quites. Por eso allá el control es una × y acá una casilla.")+'">Al registrar</th>'+
+        '<th class="plano" style="width:64px" title="'+esc(
+          "Marcalo si este crédito sí corresponde registrarlo. Sin marcar, se queda fuera y no toca ningún número.")+'">Registrar</th>'+
       '</tr></thead><tbody>'+
       creds.map(function(x,i){
         var esDesc=(x.como!=="ing");
         return '<tr class="cred-fila" data-cr="'+i+'">'+
-          '<td style="text-align:center"><input type="checkbox" data-crc="tomar"'+(x.tomar?" checked":"")+
-            ' title="Marcalo si este crédito sí corresponde registrarlo. Sin marcar, se queda fuera."></td>'+
           '<td class="sub" style="white-space:nowrap;padding:6px 8px">'+esc(fmtF(x.fecha))+'</td>'+
           '<td style="padding:6px 8px">'+esc(x.desc||"(sin descripción)")+
-            (x.pagoTj?'<div class="sub" style="font-size:10.5px;color:var(--avi-tx)" title="'+esc(
+            (x.pagoTj?'<div class="sub" style="font-size:10.5px;color:var(--avi-tx);margin-top:3px" title="'+esc(
               "Por el texto parece el pago del corte de la tarjeta, no una devolución. Registrarlo contaría dos veces el mismo dinero: lo normal es dejarlo sin marcar.")+
-              '">parece un pago de tarjeta &middot; normalmente se deja fuera</div>':'')+
-            credRepeHTML(x)+'</td>'+
+              '">parece un pago de tarjeta &middot; normalmente se deja fuera</div>':'')+'</td>'+
           '<td class="num" style="padding:6px 8px">'+credMonHTML(x)+'</td>'+
           '<td><select class="cel" data-crc="como">'+
             '<option value="desc"'+(esDesc?" selected":"")+'>descuento de la tarjeta</option>'+
             '<option value="ing"'+(esDesc?"":" selected")+'>ingreso</option></select></td>'+
           '<td><select class="cel" data-crc="cat">'+opciones(esDesc?S.catE:S.catI,x.cat||"",true)+'</select></td>'+
           '<td><select class="cel" data-crc="pago">'+opciones(S.formas,(x.pago||B.pago||""),true)+'</select></td>'+
+          '<td style="padding:5px 8px" data-cred-coinc>'+credCoincHTML(x)+'</td>'+
+          '<td style="padding:5px 8px" data-cred-dest>'+credDestinoHTML(x)+'</td>'+
+          '<td style="text-align:center"><input type="checkbox" data-crc="tomar"'+(x.tomar?" checked":"")+
+            ' title="Marcalo si este crédito sí corresponde registrarlo. Sin marcar, se queda fuera."></td>'+
         '</tr>';
       }).join("")+'</tbody></table></div>'+
       '<div class="barra-h" style="margin-top:9px">'+
@@ -8323,9 +8397,96 @@ function bResumen(){
   var bg=document.querySelector('[data-t="btnGuardarBloque"]');
   if(bg){ bg.textContent=listas?("Guardar "+listas+" fila"+(listas===1?"":"s")):"Guardar"; bg.disabled=!listas; bg.style.opacity=listas?"":".5"; }
 }
-/* El aviso de repetido de un crédito. Dice contra QUÉ lo comparó, igual que en
-   la grilla, y deja marcarlo como distinto si de verdad son dos devoluciones
-   iguales. Nunca desmarca ni bloquea: los créditos ya arrancan desmarcados. */
+/* ── LOS CRÉDITOS, CON LA MISMA CARA QUE LA GRILLA ──────────────────────────
+   Mismo veredicto, mismas dos ranuras, misma ficha campo por campo y la misma
+   columna que dice qué va a pasar. Lo único que NO se homogeneiza es el punto
+   de partida, porque es al revés a propósito: en la grilla entra todo salvo lo
+   que se quite; acá no entra nada salvo lo que se marque, porque un crédito no
+   es un gasto. Por eso allá el control es una × y acá una casilla — pero las
+   dos viven en la última columna, en el mismo lugar de la fila.             */
+function credEtiquetas(x){
+  var IGUAL   ={t:"igual",    c:"ok",  tit:"Calza exacto: mismo importe y mismo texto."};
+  var PARECIDO={t:"parecido", c:"par", tit:"Calza en parte: el importe o el texto difieren un poco, dentro del margen que la app tolera. Abajo, en morado, está el dato que no calzó."};
+  if(x.noRepe) return {eti:{t:"Sin comparar", c:"nul",
+    tit:"El aviso se descartó a mano: este crédito ya no se compara contra los que están registrados."}, de:null, cuan:null};
+  if(x.repeCred) return {eti:{t:"Repetido acá", c:"avi",
+      tit:"Hay otro crédito de este mismo pegado igual a este. Suele pasar cuando dos estados de cuenta se traslapan."},
+    de:{t:"este pegado", c:"avi", tit:"La coincidencia es con otro crédito de este mismo pegado, no con algo ya guardado."},
+    cuan:IGUAL};
+  if(x.repe) return {eti:{t:"Ya registrado", c:"avi",
+      tit:"Ya hay un crédito registrado que calza con este. Se busca en esta ventana y en la anterior porque los bancos no dicen a qué corte pertenece el cargo. La app avisa; registrarlo igual o dejarlo fuera lo decidís vos."},
+    de:{t:"crédito", c:"nul", tit:"Lo que calza es otro crédito ya registrado de "+nomVentana(x.repe.k)+". Los créditos se comparan solo contra créditos."},
+    cuan:(x.repe.tipo==="exacta")? IGUAL : PARECIDO};
+  if(x.pagoTj) return {eti:{t:"Pago de tarjeta", c:"avi",
+    tit:"Por el texto parece el pago del corte de la tarjeta, no una devolución. Registrarlo contaría dos veces el mismo dinero: lo normal es dejarlo sin marcar."}, de:null, cuan:null};
+  return {eti:{t:"Sin coincidencias", c:"nul",
+    tit:"No calza con ningún crédito ya registrado ni con otro de este pegado."}, de:null, cuan:null};
+}
+function credCoincHTML(x){
+  var et=credEtiquetas(x), bl=[];
+  bl.push('<div class="est-cab">'+chip(et.eti.t,et.eti.c,et.eti.tit)+'</div>'+
+    (et.de? '<div class="ranuras" style="margin-top:3px">'+ranura(et.de)+ranura(et.cuan)+'</div>' : ''));
+  if(x.repeCred && !x.noRepe)
+    bl.push('<div class="est-det">es igual al crédito '+x.repeCred+' de este mismo pegado</div>');
+  else if(x.repe && !x.noRepe){
+    var fx={desc:x.desc, monto:Math.abs(+x.monto||0), fecha:x.fecha, pago:(x.pago||B.pago||"")};
+    var mv=x.repe.mov, mx={desc:mv.desc, monto:Math.abs(+mv.monto||0), fecha:mv.fecha, pago:mv.pago, cat:mv.cat};
+    bl.push('<div class="est-det"><span class="sub">el crédito que ya está:</span>'+compMov(fx,mx,x.repe.k)+'</div>');
+  }
+  var acc=[];
+  if((x.repe||x.repeCred) && !x.noRepe)
+    acc.push('<button class="ln" data-acc="cred-nodup" title="'+esc(
+      "Es otro crédito distinto que casualmente se parece. Deja de avisar por este.")+'">es distinto</button>');
+  if(x.noRepe)
+    acc.push('<button class="ln" data-acc="cred-sidup" title="'+esc(
+      "Volver a compararlo contra los créditos ya registrados.")+'">volver a comparar</button>');
+  if(acc.length) bl.push('<div class="est-acc">'+acc.join("")+'</div>');
+  var dentro=bl.map(function(h){ return '<div class="cs">'+h+'</div>'; }).join("");
+  /* marca estable para saber de un vistazo —y desde afuera— si esta fila está
+     avisando de un repetido o si el aviso ya se descartó */
+  var marca=((x.repe||x.repeCred)&&!x.noRepe)? ' data-t="credRepe"' : (x.noRepe? ' data-t="credNoRepe"' : '');
+  return marca? '<div'+marca+'>'+dentro+'</div>' : dentro;
+}
+/* Qué va a pasar con ESTE crédito al pulsar Registrar. Lee lo mismo que después
+   comprueba credGuardar(): así los reparos aparecen en la fila y no recién como
+   un aviso al final, cuando ya no se sabe cuál era. */
+function credDestino(x){
+  var mo=x.moneda||"Lps", ing=(x.como==="ing");
+  if(!x.tomar) return {t:"No se registra", c:"nul",
+    partes:["queda fuera: un crédito no es un gasto"+((x.repe||x.repeCred)&&!x.noRepe? " · y además ya hay uno igual":(x.pagoTj?" · y parece el pago del corte":""))],
+    tit:"Sin marcar, este crédito no toca ningún número. Marcá la casilla de la derecha si sí corresponde registrarlo."};
+  var falta=[];
+  if(!x.cat) falta.push("el rubro");
+  if(!ing && !(x.pago||B.pago)) falta.push("de qué tarjeta es el descuento");
+  if(mo!=="Lps" && !fxTasa(mo)) falta.push("la tasa de "+mo);
+  if(falta.length) return {t:"No se puede", c:"mal",
+    partes:["falta "+falta.join(", ")],
+    tit:"Con eso sin llenar, Registrar no guarda nada — ni este ni los demás marcados. Completalo en esta misma fila."};
+  var partes=[];
+  if(ing) partes.push("entra como Ingreso de la ventana en «"+(x.cat||"")+"»");
+  else{
+    partes.push("entra como egreso negativo en «"+(x.cat||"")+"»");
+    partes.push("baja lo que «"+(x.pago||B.pago||"")+"» debe en este corte");
+  }
+  if(mo!=="Lps") partes.push("convertido a lempiras al cambio del día");
+  if((x.repe||x.repeCred)&&!x.noRepe)
+    return {t:"Ojo · se registra", c:"avi", partes:["ojo: ya hay un crédito que calza"].concat(partes),
+      tit:"La app encontró un crédito que calza, pero no bloquea: si lo registrás, el mismo dinero puede quedar dos veces. Desmarcalo, o descartá el aviso con «es distinto»."};
+  if(x.pagoTj)
+    return {t:"Ojo · se registra", c:"avi", partes:["ojo: parece el pago del corte de la tarjeta"].concat(partes),
+      tit:"Un pago de tarjeta no es una devolución: registrarlo contaría dos veces el mismo dinero. Lo normal es dejarlo sin marcar."};
+  return {t:"Se registra", c:"ok", partes:partes,
+    tit:"Al pulsar Registrar, este crédito se guarda como movimiento de esta ventana. Va derecho, sin pasar por la grilla, y queda en la bitácora."};
+}
+function credDestinoHTML(x){
+  var d=credDestino(x);
+  return '<div class="cs">'+chip(d.t,d.c,d.tit)+'</div>'+
+    '<div class="cs" style="font-size:10.5px;line-height:1.35;color:var(--tx2)">'+
+      d.partes.map(function(t){ return esc(t); }).join('<br>')+'</div>';
+}
+/* El aviso viejo, en una sola línea de texto. Lo reemplazó credCoincHTML, que
+   lo muestra con la misma cara que la grilla. Se deja porque sigue siendo la
+   forma corta de leer el mismo dato desde otras pantallas. */
 function credRepeHTML(x){
   if(x.noRepe) return '<div class="sub" data-t="credNoRepe" style="font-size:10.5px">'+
     'marcado como distinto '+

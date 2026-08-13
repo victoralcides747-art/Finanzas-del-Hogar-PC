@@ -28,6 +28,9 @@
   --ok:#0ca30c; --ok-tx:#006300; --ok-bg:#eff8ef;
   --mal:#d03b3b; --mal-tx:#b02f2f; --mal-bg:#fdf1f1;
   --avi:#fab219; --avi-tx:#6b4d00; --avi-bg:#fdf8ec; --avi-linea:#eee0bc;
+  /* morado = coincide en parte. Verde es «calza exacto», morado es «calza pero
+     no del todo». Son dos cosas distintas y no pueden verse igual. */
+  --par:#7d5bbe; --par-tx:#5a3d9a; --par-bg:#f7f4fd; --par-linea:#e2d9f7;
   --r:8px;
 }
 *{box-sizing:border-box}
@@ -265,6 +268,7 @@ th.col-plan{background:#e9f1fd;color:var(--plan-tx)}
 .pr-ancla{margin-top:12px;padding:10px 11px;border:1px dashed var(--linea);border-radius:8px;background:var(--card2)}
 .ln{background:none;border:0;padding:0;font:inherit;color:var(--plan);cursor:pointer;text-decoration:underline}
 .ln:hover{color:var(--tx)}
+.ln.fuerte{font-weight:700;color:var(--mal-tx)}   /* el paso que cierra la fila: quitarla */
 .pbt{background:none;border:1px solid transparent;color:var(--tx3);cursor:pointer;padding:3px 6px;
   border-radius:5px;line-height:1;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;opacity:.35}
 tr:hover .pbt{opacity:1;border-color:var(--linea)}
@@ -336,15 +340,50 @@ tr.lista td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
 .chip.c-avi {color:var(--avi-tx); background:var(--avi-bg); border-color:var(--avi-linea)}
 .chip.c-mal {color:var(--mal-tx); background:var(--mal-bg); border-color:#f0d2d2}
 .chip.c-plan{color:var(--plan-tx);background:var(--plan-bg);border-color:var(--plan-linea)}
+.chip.c-par {color:var(--par-tx);  background:var(--par-bg);  border-color:var(--par-linea)}
 .chip.c-nul {color:var(--tx3);    background:var(--linea3); border-color:var(--linea2)}
-.ranuras{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:3px;align-items:start}
+.ranuras{display:grid;grid-template-columns:1fr 1fr;gap:3px;align-items:start}
 .ranuras .chip{text-transform:none;letter-spacing:0;font-weight:600;font-size:10px}
-.est-cab{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 6px;margin-bottom:1px}
+.est-cab{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 6px}
 .est.muda{display:none}   /* la etiqueta ya dice lo mismo; el texto queda en el html, no en pantalla */
+/* ── la casilla dividida ───────────────────────────────────────────
+   Permanente y Estado son las dos casillas con más texto de la app. En vez de
+   un párrafo, cada una se parte en bloques SIEMPRE en el mismo orden, con una
+   línea fina entre bloques: el ojo aprende dónde está cada cosa y deja de leer. */
+.cs{padding:3px 0}
+.cs:first-child{padding-top:1px}
+.cs:last-child{padding-bottom:1px}
+.cs + .cs{border-top:1px dashed var(--linea)}
+/* la ficha de contra qué se comparó: etiqueta a la izquierda, dato a la derecha,
+   siempre en el mismo renglón. Verde lo que calza exacto, morado lo que no. */
+.comp{display:grid;grid-template-columns:42px 1fr;gap:0 6px;font-size:10.5px;line-height:1.3;margin:1px 0 0}
+.comp dt{color:var(--tx3)}
+.comp dd{margin:0;overflow-wrap:anywhere}
+.comp .ig{color:var(--ok-tx)}
+.comp .pa{color:var(--par-tx)}
+.comp .nn{color:var(--tx2)}
+/* Los botones de las casillas van uno debajo del otro y BIEN separados, con
+   su propia zona de toque: pegados unos a otros, en una pantalla táctil se le
+   erraba y se descartaba un aviso queriendo corregir. */
+.est-acc{display:flex;flex-direction:column;align-items:stretch;font-size:10.5px}
+.est-acc .ln{padding:6px 6px;margin-left:-6px;border-radius:4px;line-height:1.35;text-align:left}
+.est-acc .ln:hover{background:var(--linea3)}
+/* y una raya entre uno y otro: que se lean como dos decisiones distintas, no
+   como dos renglones del mismo párrafo */
+.est-acc .ln + .ln{border-top:1px dashed var(--linea);margin-top:7px;padding-top:8px}
+.est-det{margin-top:0}
 /* la referencia: qué quiere decir cada color, arriba de la grilla y siempre a la vista */
 .refs{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:9px 0 2px;
   font-size:10.5px;color:var(--tx3)}
 .refs .r{display:inline-flex;align-items:center;gap:5px}
+/* encabezados centrados y una línea de verdad entre filas: con casillas de seis
+   renglones, la raya tenue de las demás tablas no alcanzaba para ver dónde
+   empieza y dónde termina cada fila. */
+table[data-t="tablaPegado"] th,table[data-t="tablaPegado"] th.plano{text-align:center}
+table[data-t="tablaPegado"] tbody td{border-bottom:1px solid rgba(11,11,11,.22);vertical-align:top;padding-top:4px}
+table[data-t="tablaPegado"] tbody td .cel{margin-top:1px}
+table[data-t="tablaPegado"] tbody tr:last-child td{border-bottom:0}
+select.cel.sin-elegir{text-align:center;color:var(--tx3)}
 /* ── cierres · mosaico ───────────────────────────────────────────── */
 .cie-fila td{cursor:pointer}
 .cie-fila.on td{background:var(--card2)}
@@ -4412,7 +4451,7 @@ function desglose(cual,extra){
     permsActivos(k).forEach(function(f){
       if((f.tipo||"Egreso")!=="Ingreso" || !cts(f.monto)) return;
       lineas.push({t:f.desc||f.cat||"(sin nombre)",
-        n:(f.cat||"sin rubro")+(movDePerm(k,f.id)?" · ya registrado":" · todavía sin registrar"),
+        n:(f.cat||"sin rubro")+(movDePerm(k,f.id)?" · ya recibido":" · todavía sin recibir"),
         v:red(+f.monto||0)});
     });
     formula="Suma de los <b>ingresos permanentes activos</b> de la ventana, estén marcados o no. "+
@@ -5801,6 +5840,45 @@ document.addEventListener("click", function(ev){
     toast(traer.length+" línea(s) traídas &middot; revisar: se habían dejado fuera por no ser gasto",5500);
     return;
   }
+  /* ── CORREGIR LOS CENTAVOS ────────────────────────────────────────────────
+     El banco manda el importe definitivo; el que estaba registrado quedó con
+     unos centavos de diferencia. Esto corrige ESE movimiento —el que ya está—,
+     no crea ninguno: es la misma edición que se haría a mano en Movimientos,
+     puesta acá porque acá es donde se ve la diferencia. Toca plata, así que es
+     un botón, dice de cuánto a cuánto, y avisa qué quedó. */
+  if(acc==="b-corregir"){
+    var trX=b.closest("tr[data-b]"); if(!trX||!B) return;
+    var iX=+trX.getAttribute("data-b"), fX=B.filas[iX];
+    if(!fX||!fX.repe||!fX.repe.dif||fX.noRepe) return;
+    var mv=fX.repe.mov, nuevo=Math.abs(parseMonto(fX.monto));
+    if(!(nuevo>0)) return;
+    var antesM=mv.monto;
+    mv.monto = (cts(antesM)<0? -nuevo : nuevo);
+    if(mv.origen==="perm") mv.editado=true;   /* ya no es la plantilla tal cual */
+    /* Si ese pago era el de un permanente, la plantilla también estaba con el
+       importe viejo: corregir uno y dejar el otro es dejar el trabajo a medias,
+       y en la ventana siguiente volvería a aparecer la misma diferencia. Se
+       corrigen los dos de un clic, y se dice cuál era y cuál quedó. */
+    var pC=null, antesP=null;
+    if(mv.permId){
+      pC=permsK(fX.repe.k).filter(function(x){ return x.id===mv.permId; })[0]||null;
+      if(pC && cts(pC.monto)!==cts(nuevo)){ antesP=pC.monto; pC.monto=red(nuevo); }
+      else pC=null;
+    }
+    fX.corregida={antes:antesM, ahora:mv.monto, k:fX.repe.k,
+                  desc:String(mv.desc||""), perm:(pC? (pC.desc||pC.cat||"") : ""), antesPerm:antesP};
+    guardar();
+    bRecalculaTodo(); pintaPegado();
+    toast("Corregido &middot; «"+String(mv.desc||"").slice(0,30)+"» "+fmt(antesM)+" → "+fmt(mv.monto)+
+          (pC? " &middot; y el permanente «"+(pC.desc||pC.cat)+"» "+fmt(antesP)+" → "+fmt(pC.monto) : "")+
+          " en "+nomVentana(fX.repe.k)+" &middot; esta fila ya no hace falta: quitala",7000);
+    return;
+  }
+  if(acc==="b-nota-abrir"){
+    var trNA=b.closest("tr[data-b]"); if(!trNA||!B) return;
+    var iNA=+trNA.getAttribute("data-b"); if(!B.filas[iNA]) return;
+    B.filas[iNA].notaAbrir=true; bRepintaFila(iNA); return;
+  }
   if(acc==="b-nodup" || acc==="b-sidup"){
     var trN=b.closest("tr[data-b]"); if(!trN||!B) return;
     var iN=+trN.getAttribute("data-b"), fN=B.filas[iN]; if(!fN) return;
@@ -6145,6 +6223,10 @@ document.addEventListener("change", function(ev){
         var pe=permsK(kAct()).filter(function(x){ return x.id===fb.permSel; })[0];
         if(pe && pe.cat) { fb.cat=pe.cat; fb.catAuto={cat:pe.cat, de:"el permanente elegido"}; }
       }
+      bRepintaFila(i); bResumen(); return;
+    }
+    if(bc==="notaSel"){                         /* REGLA 2: la nota también la elige él */
+      fb.notaSel=t.value; fb.notaTocada=true;
       bRepintaFila(i); bResumen(); return;
     }
     if(bc==="desc"||bc==="monto"||bc==="fecha"||bc==="pago"){ bRecalcula(fb); bRepeEnBloque(); bRepintaFila(i); bRepintaEstados(); }
@@ -7405,9 +7487,43 @@ function sugerirCat(f){
 var B=null;
 function filaB(){ return {fecha:"",desc:"",motivo:"",monto:"",cat:"",pago:"",moneda:"Lps",origMon:null,origVal:0,tasa:null,
   tarjeta:"",permSel:"",permTocada:false,
-  marcar:false,autoMarcada:false,duplaPerm:false,nuevoPerm:false,
+  marcar:false,autoMarcada:false,duplaPerm:false,nuevoPerm:false,corregida:null,
+  notaSel:"",notaTocada:false,
   sug:null,catAuto:null,catManual:false}; }
 function bVacia(f){ return !f.fecha && !String(f.desc).trim() && !String(f.monto).trim(); }
+/* ── CONTRA QUÉ SE COMPARÓ, CAMPO POR CAMPO ─────────────────────────────────
+   Antes esto era un renglón corrido y había que comparar de memoria contra la
+   fila de al lado. Ahora cada dato tiene su renglón, y el color dice lo único
+   que importa: VERDE calza exacto, MORADO calza pero no del todo. Se ve de un
+   golpe si lo distinto es el importe, el texto del banco o la fecha.
+   Esto NO compara nada nuevo: son los mismos datos que la app ya había cruzado. */
+function campoComp(et,val,est){ return '<dt>'+esc(et)+'</dt><dd class="'+est+'">'+val+'</dd>'; }
+function mismoTexto(a,b){ return String(a||"").trim().toUpperCase()===String(b||"").trim().toUpperCase(); }
+function compMov(f,mov,k){
+  var h='<dl class="comp">';
+  h+=campoComp("comercio", '<b>'+esc(String(mov.desc||"(sin descripción)").slice(0,60))+'</b>',
+      mismoTexto(f.desc,mov.desc)?"ig":"pa");
+  var dif=red((cts(parseMonto(f.monto))-cts(parseMonto(mov.monto)))/100);
+  h+=campoComp("monto", fmt(mov.monto)+(dif? ' <span class="sub">('+fmt(Math.abs(dif))+
+      (dif>0?" menos":" más")+' que esta línea)</span>' : ''), dif?"pa":"ig");
+  h+=campoComp("fecha", esc(fmtF(mov.fecha)), (mov.fecha===f.fecha)?"ig":"pa");
+  h+=campoComp("pago", esc(mov.pago||"sin forma de pago"),
+      (!mov.pago||!f.pago)?"nn":(mov.pago===f.pago?"ig":"pa"));
+  if(k&&k!==kAct()) h+=campoComp("ventana", esc(nomVentana(k)), "pa");
+  return h+'</dl>';
+}
+function compNota(f,n,c){
+  var h='<dl class="comp">';
+  h+=campoComp("nota", '<b>'+esc(String(n.que||"(sin texto)").slice(0,60))+'</b>', "nn");
+  var dif=c&&c.dif? red(c.dif/100) : 0;
+  h+=campoComp("monto", fmt(n.monto)+(dif? ' <span class="sub">('+fmt(Math.abs(dif))+
+      (dif>0?" menos":" más")+' que esta línea)</span>' : ''), dif?"pa":"ig");
+  h+=campoComp("fecha", esc(fmtF(n.fecha)), (n.fecha===f.fecha)?"ig":"pa");
+  h+=campoComp("pago", esc(n.pago||"sin forma de pago"),
+      (!n.pago||!f.pago)?"nn":(n.pago===f.pago?"ig":"pa"));
+  if(n.autor) h+=campoComp("anotó", esc(n.autor), "nn");
+  return h+'</dl>';
+}
 function bEstado(f){
   if(bVacia(f)) return {clase:"", txt:"", ok:false};
   var falta=[];
@@ -7426,8 +7542,8 @@ function bEstado(f){
     var casi=(f.repe.tipo==="parecida");
     return {clase:"ojo", ok:true, repe:true,
     /* CUÁL movimiento: sin esto había que adivinar contra qué la comparó */
-    det:'<span class="sub">el movimiento que ya está:</span><br>'+detMov(f.repe.mov,f.repe.k)+
-        (f.repe.perm?'<br><span class="sub">ligado a un permanente</span>':''),
+    det:'<span class="sub">el movimiento que ya está'+(f.repe.perm?', que es un permanente pagado':'')+
+        ':</span>'+compMov(f,f.repe.mov,f.repe.k),
     txt:(casi?"parecida a una ya registrada":"ya registrada")+
         (f.repe.otra?" en "+nomVentana(f.repe.k):"")+" el "+fmtF(f.repe.mov.fecha)+
         (f.repe.dias?" ("+f.repe.dias+" día"+(f.repe.dias===1?"":"s")+" de diferencia)":"")+
@@ -7454,10 +7570,7 @@ function bEstado(f){
     txt:"anotado en una nota: "+String(f.nota.n.que||"sin texto").slice(0,26)+
         (f.nota.c.dif? " · "+fmt(Math.abs(f.nota.c.dif)/100)+
           (f.nota.c.dif>0? " menos en el banco":" más en el banco") : " · mismo importe"),
-    det:'<span class="sub">la nota:</span><br><b>'+esc(String(f.nota.n.que||"(sin texto)").slice(0,46))+'</b><br>'+
-        fmt(f.nota.n.monto)+(f.nota.n.pago?' &middot; '+esc(f.nota.n.pago):'')+
-        (f.nota.n.cat?' &middot; '+esc(f.nota.n.cat):'')+
-        (f.nota.n.autor?'<br><span class="sub">anotó '+esc(f.nota.n.autor)+'</span>':''),
+    det:'<span class="sub">la nota que ya estaba anotada:</span>'+compNota(f,f.nota.n,f.nota.c),
     tit:"Esta línea del banco calza con una nota de la app satélite: «"+(f.nota.n.que||"sin texto")+
         "» por "+fmt(f.nota.n.monto)+" del "+fmtF(f.nota.n.fecha)+
         ". Guardala igual: al terminar el pegado la app propone dar esa nota por cubierta, "+
@@ -7472,7 +7585,7 @@ function bRecalcula(f){
   var antes=f.sug&&f.sug.perm&&f.sug.perm.id;
   f.sug=sugerirPermanente(f);
   /* Elección por defecto de la app: SOLO en el caso limpio — el permanente
-     todavía no tiene movimiento en la ventana y la coincidencia es inequívoca.
+     todavía no está pagado en la ventana y la coincidencia es inequívoca.
      Elegir aquí NO crea plata: la fila del banco se va a guardar igual; la
      elección solo la liga al permanente, y queda a la vista antes de guardar.
      Si él ya tocó el selector, la app no vuelve a opinar sobre esa fila. */
@@ -7489,6 +7602,9 @@ function bRecalcula(f){
   f.marcar=!!(f.permSel && f.permSel!=="__nuevo");
   f.nuevoPerm=(f.permSel==="__nuevo");
   if(!f.marcar) f.autoMarcada=false;
+  /* la marca de «corregida» vale para ESE importe: si se edita la fila, deja de
+     ser cierta y se cae sola. */
+  if(f.corregida && cts(parseMonto(f.monto))!==cts(f.corregida.ahora)) f.corregida=null;
   f.repe=f.noRepe? null : bRepetida(f);
   /* ¿Esta línea del banco es la que estaba anotada en una nota? Se compara con
      el MISMO criterio que después usa el panel de cubrir: forma de pago, monto
@@ -7496,6 +7612,14 @@ function bRecalcula(f){
      nada se marca solo—, pero ver la nota ANTES de guardar evita registrar el
      gasto y dejar la nota viva, que sería contarlo dos veces. */
   f.nota=bNotaCalza(f);
+  /* La nota NO se liga sola. La app la encuentra y la deja primera en la lista,
+     pero el margen con que compara es ancho a propósito —el banco cobra bastante
+     menos de lo anotado por el descuento de ley—, y dar por cubierta una nota
+     que no era hace desaparecer un gasto que todavía estaba flotando. Ligar es
+     decisión suya, y recién ahí, al guardar, la nota se da por cubierta. */
+  if(f.notaSel && !notasVivas(kAct()).some(function(n){ return n.id===f.notaSel; })){
+    f.notaSel=""; f.notaTocada=false;             /* se cubrió o se borró desde el celular */
+  }
   if(!f.catManual){
     var s=sugerirCat(f);
     if(s){ f.cat=s.cat; f.catAuto=s; } else if(f.catAuto){ f.cat=""; f.catAuto=null; }
@@ -7567,23 +7691,36 @@ function pintaPegado(){
    acordarse: verde se guarda y no hay nada que mirar, ámbar hay algo igual o
    parecido, rojo le falta un dato, azul es la app opinando o una nota. */
 function bRefs(){
-  var r=[
+  var veredicto=[
     ["Lista","ok","nada que revisar",
-     "No calza con ningún movimiento guardado ni con ninguna nota. Se guarda tal cual."],
+     "No calza con nada guardado ni con ninguna nota. Se guarda tal cual."],
     ["Ya registrada","avi","hay algo igual o parecido guardado",
-     "Hay un movimiento ya guardado que calza con esa línea. La app avisa; quitar la fila o guardarla igual lo decidís vos."],
+     "Ya hay algo guardado que calza con esa línea. La app avisa; quitar la fila o guardarla igual lo decidís vos."],
     ["Repetida acá","avi","dos filas de este pegado son la misma",
      "Pasa cuando dos estados de cuenta se traslapan y traen la misma línea."],
     ["Anotado en nota","plan","calza con una nota",
      "La línea del banco calza con una nota. Guardala igual: al terminar, la app propone dar la nota por cubierta."],
     ["Incompleta","mal","esa fila no se guarda",
      "Le falta la fecha, el monto, la forma de pago o la tasa. Las demás filas se guardan igual."],
-    ["Propuesto","plan","la app sugiere, vos decidís",
-     "Un permanente que la app encontró y dejó propuesto en el selector. Nada se aplica solo."]
+    ["Recomendado","plan","la app sugiere, vos decidís",
+     "Un permanente que la app encontró y dejó primero y en negrita en el selector. Nada se aplica solo. Un permanente ya pagado nunca se recomienda."]
   ];
-  return '<div class="refs" data-t="refsPegado"><span>Referencias</span>'+
-    r.map(function(x){ return '<span class="r">'+chip(x[0],x[1],x[3])+'<span>'+esc(x[2])+'</span></span>'; }).join("")+
-  '</div>';
+  /* Segundo renglón: el código de la COMPARACIÓN, que es otra cosa que el
+     veredicto. Verde calza exacto, morado calza en parte — y el mismo color
+     marca, dato por dato, cuál fue el que no calzó. */
+  var compar=[
+    ["igual","ok","calza exacto",
+     "El dato es idéntico al de lo que ya estaba guardado."],
+    ["parecido","par","calza en parte",
+     "El dato no es idéntico: difiere en centavos, en el texto del banco o en la fecha, dentro del margen que la app tolera."]
+  ];
+  function linea(tit,arr){
+    return '<div class="refs"><span>'+esc(tit)+'</span>'+
+      arr.map(function(x){ return '<span class="r">'+chip(x[0],x[1],x[3])+'<span>'+esc(x[2])+'</span></span>'; }).join("")+
+    '</div>';
+  }
+  return '<div data-t="refsPegado">'+linea("Veredicto",veredicto)+
+         linea("La comparación, dato por dato",compar)+'</div>';
 }
 function pintaPegado0(){
   bAsegura();
@@ -7600,7 +7737,7 @@ function pintaPegado0(){
         '<select class="pill" id="bPago" data-t="bPago">'+opciones(S.formas,B.pago)+'</select>'+
         '<button class="btn gh peq" data-acc="b-aplicar-pago">Aplicar a todas</button>'+
         '<label class="sub" style="display:flex;align-items:center;gap:5px;cursor:pointer" '+
-          'title="Tilda sola la casilla cuando la coincidencia es inequívoca: el permanente aún no tiene movimiento en la ventana y el monto calza dentro del 0.3 %, con un único candidato. '+
+          'title="Tilda sola la casilla cuando la coincidencia es inequívoca: el permanente todavía no está pagado en la ventana y el monto calza dentro del 0.3 %, con un único candidato. '+
           'Los casos dudosos nunca se marcan solos. Marcar no suma dinero: la fila se guarda igual, la marca solo la liga al permanente.">'+
           '<input type="checkbox" id="bAuto" data-t="bAuto"'+(S.prefs.autoPerm!==false?" checked":"")+'> detectar permanentes</label>'+
         '<div class="sp"></div><button class="btn gh peq" data-acc="b-limpiar">Vaciar grilla</button>'+
@@ -7609,12 +7746,21 @@ function pintaPegado0(){
       '<div class="tabla-cont" style="max-height:58vh;overflow:auto"><table data-t="tablaPegado"><thead><tr>'+
         '<th class="plano" style="width:118px">Fecha</th>'+
         '<th class="plano" style="min-width:230px" title="El texto tal cual lo manda el banco: nombra el comercio, no lo que se compró. De él dependen la detección de duplicados y el reconocimiento de permanentes.">Comercio</th>'+
-        '<th class="plano" style="width:170px" title="Texto propio: qué se compró o se pagó. Ayuda a diferenciar cobros parecidos y viaja con el movimiento al guardar.">Productos</th>'+
-        '<th class="plano" style="width:142px;text-align:right">Monto</th>'+
-        '<th class="plano" style="width:152px">Categoría</th>'+
-        '<th class="plano" style="width:150px">Forma de pago</th>'+
-        '<th class="plano" style="width:290px" title="A qué permanente de la ventana corresponde el cobro. La app propone uno cuando la coincidencia es inequívoca y muestra su ficha completa —importe, forma de pago, rubro, productos— con en rojo lo que no calza. Debajo del selector, en un lugar fijo: en qué quedó el vínculo y si ese permanente YA tiene un movimiento en la ventana. La elección es tuya: «ninguno» lo registra como gasto normal, otro lo liga a ese, y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.">Permanente</th>'+
-        '<th class="plano" style="width:226px" title="Si la app cree que esta fila ya está registrada, acá aparece el movimiento concreto que encontró. La primera etiqueta es el veredicto; debajo, en un lugar fijo, de dónde salió la coincidencia (un movimiento guardado, una nota, u otra fila de este pegado) y si es igual o solo parecida. No tiene relación con la columna Permanente: esa compara contra la lista de permanentes, esta contra los movimientos ya guardados.">Estado</th>'+
+        '<th class="plano" style="width:130px" title="Texto propio: qué se compró o se pagó. Ayuda a diferenciar cobros parecidos y viaja con el movimiento al guardar.">Productos</th>'+
+        '<th class="plano" style="width:130px">Monto</th>'+
+        '<th class="plano" style="width:145px">Categoría</th>'+
+        '<th class="plano" style="width:145px">Forma de pago</th>'+
+        '<th class="plano" style="width:290px" title="A qué permanente de la ventana corresponde el cobro. La app recomienda uno cuando la coincidencia es inequívoca y muestra su ficha completa —importe, forma de pago, rubro, productos— con en rojo lo que no calza; un permanente ya pagado nunca se recomienda. Debajo del selector, en dos ranuras fijas: en qué quedó el vínculo, y si ese permanente ya está pagado o sin pagar en esta ventana. La elección es tuya: «ninguno» lo registra como gasto suelto, otro lo liga a ese, y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.">Permanente</th>'+
+        '<th class="plano" style="width:290px" title="'+esc(
+          "Lo que la app encontró que se parece a esta línea, pero FUERA de los permanentes: un movimiento ya registrado, "+
+          "otra fila de este mismo pegado, o una nota del celular. Arriba, en dos ranuras fijas, de qué clase es la "+
+          "coincidencia y si calza exacto o solo en parte; debajo, dato por dato, con en verde lo que calza y en morado lo "+
+          "que no. Y abajo el selector de nota, para ligar la que corresponda cuando la app no la encontró o encontró otra. "+
+          "Nada de acá bloquea: la app avisa, vos decidís.")+'">Coincidencias</th>'+
+        '<th class="plano" style="width:200px" title="'+esc(
+          "Qué va a pasar con esta fila cuando le des Guardar. Es la columna para leer de arriba abajo antes de guardar: "+
+          "si todas dicen lo que esperás, guardá. Se calcula de todo lo demás —lo que elegiste en Permanente, la nota que "+
+          "ligaste, si le falta un dato, si ya está registrada— y no tiene ningún control propio.")+'">Al guardar</th>'+
         '<th class="plano" style="width:30px"></th>'+
       '</tr></thead><tbody id="bCuerpo">'+B.filas.map(bFila).join("")+'</tbody></table></div>'+
       '<div id="bResumen" data-t="bResumen"></div>'+
@@ -7635,8 +7781,9 @@ function bFila(f,i){
       selMoneda('data-c="monEnt"')+'</div></td>'+
     '<td><select class="cel'+(f.catAuto?" auto":"")+'" data-bc="cat" title="'+esc(catTit)+'">'+opciones(cats,f.cat)+'</select></td>'+
     '<td><select class="cel" data-bc="pago">'+opciones(S.formas,f.pago)+'</select></td>'+
-    '<td style="padding:5px 8px;max-width:290px;overflow:hidden">'+sug+'</td>'+
+    '<td style="padding:5px 8px;max-width:290px;overflow:hidden" data-perm-td>'+sug+'</td>'+
     '<td style="padding:5px 8px" data-est-td>'+bEstadoHTML(e,f)+'</td>'+
+    '<td style="padding:5px 8px" data-dest-td>'+bDestinoHTML(f,e)+'</td>'+
     '<td><button class="borrar" data-acc="b-borrar">×</button></td>'+
   '</tr>';
 }
@@ -7684,19 +7831,29 @@ function bSugHTML(f){
   var k=kAct(), lista=permsK(k).filter(function(p){ return (p.tipo||"Egreso")===B.tipo; });
   lista.sort(function(a,b){ return String(a.desc||a.cat).localeCompare(String(b.desc||b.cat)); });
   var sel=f.permSel||"", monto=Math.abs(parseMonto(f.monto));
+  /* Un permanente que YA está pagado no se propone: proponerlo sería empujar a
+     contar el mismo cobro dos veces. Se avisa —la ficha dice cuál lo pagó— pero
+     la app no lo ofrece como recomendación. */
+  var reco = (f.sug && !f.sug.yaMarcado && !f.sug.yaCubierto) ? f.sug.perm : null;
+  function opcionPerm(p,gordo){
+    var nm=String(p.desc||p.cat||"");
+    if(nm.length>26) nm=nm.slice(0,25)+"…";
+    return '<option value="'+esc(p.id)+'"'+(sel===p.id?" selected":"")+
+      (gordo?' style="font-weight:700"':'')+'>'+
+      esc(nm)+' · '+fmt(p.monto)+(movDePerm(k,p.id)?" · pagado":"")+(permActivo(p)?"":" (pausado)")+'</option>';
+  }
   var op='<option value="">— ninguno —</option>';
-  if(lista.length){
-    op+='<optgroup label="Permanentes de la ventana">'+lista.map(function(p){
-      var mv=movDePerm(k,p.id);
-      var nm=String(p.desc||p.cat||"");
-      if(nm.length>26) nm=nm.slice(0,25)+"…";
-      return '<option value="'+esc(p.id)+'"'+(sel===p.id?" selected":"")+'>'+
-        esc(nm)+' · '+fmt(p.monto)+(mv?" · ya registrado":"")+(permActivo(p)?"":" (pausado)")+'</option>';
-    }).join("")+'</optgroup>';
+  /* El recomendado, arriba, en negrita y en su propio grupo: al desplegar tiene
+     que saltar a la vista cuál es, no haber que buscarlo entre cuarenta. */
+  if(reco) op+='<optgroup label="La app recomienda">'+opcionPerm(reco,true)+'</optgroup>';
+  var resto=lista.filter(function(p){ return !reco || p.id!==reco.id; });
+  if(resto.length){
+    op+='<optgroup label="'+(reco?"Los demás permanentes de la ventana":"Permanentes de la ventana")+'">'+
+      resto.map(function(p){ return opcionPerm(p,false); }).join("")+'</optgroup>';
   }
   op+='<option value="__nuevo"'+(sel==="__nuevo"?" selected":"")+'>+ permanente nuevo</option>';
 
-  var p=permDeFila(f), notas=[];
+  var p=permDeFila(f), notas=[], accs=[];
   /* «— ninguno —» mudo no ayuda: si hubo un candidato que estuvo cerca, se dice
      cuál y por qué no se propuso. El selector sigue teniendo la lista entera. */
   if(!sel && !f.sug){
@@ -7710,7 +7867,8 @@ function bSugHTML(f){
      forma de pago, rubro, productos, última cuota y si ya está cubierto. En rojo
      lo que NO calza con esta fila. */
   if(!sel && f.sug)
-    notas.push('<span class="sub">la app propone &middot; '+f.sug.por+'</span><br>'+fichaPerm(f.sug.perm,f));
+    notas.push('<span class="sub">'+(reco? 'la app recomienda &middot; '+f.sug.por
+        : 'calza con este, pero ya está pagado &middot; no se recomienda')+'</span><br>'+fichaPerm(f.sug.perm,f));
   else if(sel==="__nuevo")
     /* La ficha de lo que se VA A CREAR, con los datos de ESTA fila. Nunca la del
        candidato descartado: leerlas juntas hacía creer que el permanente nuevo
@@ -7722,16 +7880,16 @@ function bSugHTML(f){
         ? '<span class="sub">'+f.sug.por+(f.autoMarcada?' &middot; elegido por la app':'')+'</span><br>'
         : '<span class="sub">elegido a mano</span><br>')+fichaPerm(p,f));
     if(cts(p.monto)!==cts(monto) && monto>0)
-      notas.push('<button class="ln" data-acc="b-perm-monto" title="Poner el permanente en '+esc(fmt(monto))+' para esta ventana y las que hereden de ella.">actualizar el importe a '+fmt(monto)+'</button>');
+      accs.push('<button class="ln" data-acc="b-perm-monto" title="Poner el permanente en '+esc(fmt(monto))+' para esta ventana y las que hereden de ella.">actualizar el importe a '+fmt(monto)+'</button>');
     if(String(p.pago||"")&&String(f.pago||"")&&p.pago!==f.pago)
-      notas.push('<button class="ln" data-acc="b-perm-pago" title="Poner la forma de pago del permanente en '+esc(f.pago)+' para esta ventana y las que hereden de ella.">actualizar la forma de pago a '+esc(f.pago)+'</button>');
+      accs.push('<button class="ln" data-acc="b-perm-pago" title="Poner la forma de pago del permanente en '+esc(f.pago)+' para esta ventana y las que hereden de ella.">actualizar la forma de pago a '+esc(f.pago)+'</button>');
     if(f.sug&&f.sug.perm.id!==p.id)
       notas.push('<span class="sub">la app había propuesto «'+esc(f.sug.perm.desc||f.sug.perm.cat)+'»</span>');
   }
   if(f.duplaPerm) notas.push('<span class="tx-mal">otra fila de este pegado eligió el mismo</span>');
   /* Dos ranuras fijas debajo del selector, siempre las mismas y en el mismo
      lugar: en qué quedó el vínculo, y —lo que faltaba a la vista— si ese
-     permanente YA tiene un movimiento en la ventana. Eso último es el aviso que
+     permanente ya está pagado en la ventana. Eso último es el aviso que
      evita registrar el mismo cobro dos veces. No cambia ningún número: es la
      misma consulta que la app ya hacía para pintar la fila. */
   var pRef = p ? p : (!sel && f.sug ? f.sug.perm : null);
@@ -7740,36 +7898,42 @@ function bSugHTML(f){
      puesta. El verde es tuyo; el azul es de la app y está para revisarse. */
   var vinc = p && f.autoMarcada
                           ? {t:"ligado por la app", c:"plan",
-                             tit:"La app lo eligió sola porque la coincidencia era inequívoca: el permanente no tenía movimiento en la ventana y el importe calzaba, con un único candidato. Cambialo en el selector si no corresponde. Ligar no suma dinero: la fila se guarda igual."}
+                             tit:"La app lo eligió sola porque la coincidencia era inequívoca: el permanente todavía no estaba pagado en la ventana y el importe calzaba, con un único candidato. Cambialo en el selector si no corresponde. Ligar no suma dinero: la fila se guarda igual."}
            : p            ? {t:"ligado", c:"ok",
                              tit:"Elegido a mano. Esta fila queda ligada a ese permanente al guardar. Ligar no suma dinero: el movimiento se guarda igual."}
            : sel==="__nuevo"? {t:"permanente nuevo", c:"plan",
                              tit:"Al guardar se agrega un permanente nuevo a la lista de la ventana, con los datos de esta fila."}
-           : f.sug        ? {t:"propuesto", c:"plan",
-                             tit:"La app encontró un permanente que calza y lo dejó propuesto en el selector. Mientras no lo elijas, la fila se guarda como gasto suelto."}
+           : reco         ? {t:"recomendado", c:"plan",
+                             tit:"La app encontró un permanente que calza y lo dejó recomendado, primero y en negrita en el selector. Mientras no lo elijas, la fila se guarda como gasto suelto."}
                           : {t:"sin ligar", c:"nul",
-                             tit:"La fila se guarda como un gasto suelto, sin ligarse a ningún permanente."};
+                             tit:(f.sug? "Hay un permanente que calza, pero ya está pagado en esta ventana, así que la app no lo recomienda. Abajo está cuál es. Si aun así corresponde, elegilo en la lista."
+                                       : "La fila se guarda como un gasto suelto, sin ligarse a ningún permanente.")};
+  /* Pagado o sin pagar: un permanente no «tiene movimientos», está pagado o no.
+     Y esta es la ranura que evita pagar dos veces lo mismo. */
   var reg=null;
   if(pRef){
     var mvR=movDePerm(k,pRef.id);
-    reg = mvR ? {t:"ya registrado", c:"avi",
-                 tit:"Ese permanente YA tiene un movimiento en esta ventana: «"+(mvR.desc||pRef.desc||pRef.cat||"")+
+    reg = mvR ? {t:"pagado", c:"avi",
+                 tit:"Ese permanente YA está pagado en esta ventana, con «"+(mvR.desc||pRef.desc||pRef.cat||"")+
                      "» por "+fmt(mvR.monto)+" del "+fmtF(mvR.fecha)+
-                     (mvR.origen==="perm"? " (creado al marcar la casilla en Permanentes)":"")+
+                     (mvR.origen==="perm"? " (registrado al marcar su casilla en Permanentes)":"")+
                      ". Si esta línea es ese mismo cobro, guardarla lo deja contado dos veces."}
-              : {t:"sin registrar", c:"nul",
-                 tit:"Ese permanente todavía no tiene ningún movimiento en esta ventana."};
+              : {t:"sin pagar", c:"nul",
+                 tit:"Ese permanente todavía no está pagado en esta ventana."};
   }
-  return '<div style="width:272px">'+
-    '<select class="cel'+(sel?" sug":"")+'" data-bc="permSel" style="width:100%" title="'+esc(
+  var selHTML='<select class="cel'+(sel?" sug":" sin-elegir")+'" data-bc="permSel" style="width:100%" title="'+esc(
       "A qué permanente de la ventana corresponde este cobro. La app propone uno cuando la coincidencia es inequívoca, "+
       "pero la decisión es tuya: dejarlo en «ninguno» lo registra como gasto normal, elegir otro lo liga a ese, "+
-      "y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.")+'">'+op+'</select>'+
-    /* igual que en Estado: si no hay ningún permanente en juego no hay nada que
-       etiquetar, y la fila se queda de una línea */
-    (pRef||sel==="__nuevo" ? '<div class="ranuras">'+ranura(vinc)+ranura(reg)+'</div>' : '')+
-    (notas.length?'<div style="font-size:11px;line-height:1.4;margin-top:3px">'+notas.join('<br>')+'</div>':'')+
-  '</div>';
+      "y «+ permanente nuevo» lo agrega a la lista. Elegir no suma dinero: la fila se guarda igual.")+'">'+op+'</select>';
+  /* La casilla en bloques, siempre en el mismo orden y separados por una línea
+     fina: el selector, las dos etiquetas, la ficha y los botones. Igual que en
+     Estado, para que el ojo aprenda una sola estructura y la use en las dos. */
+  var bl=['<div class="cs">'+selHTML+'</div>'];
+  /* si no hay ningún permanente en juego no hay nada que etiquetar */
+  if(pRef||sel==="__nuevo") bl.push('<div class="cs"><div class="ranuras">'+ranura(vinc)+ranura(reg)+'</div></div>');
+  if(notas.length) bl.push('<div class="cs" data-t="permFicha" style="font-size:11px;line-height:1.4">'+notas.join('<br>')+'</div>');
+  if(accs.length) bl.push('<div class="cs est-acc">'+accs.join("")+'</div>');
+  return '<div style="width:272px">'+bl.join("")+'</div>';
 }
 /* ── LAS ETIQUETAS ──────────────────────────────────────────────────────────
    No comparan nada nuevo: leen el mismo estado que la app ya había calculado y
@@ -7783,8 +7947,10 @@ function ranura(x){ return x? chip(x.t,x.c,x.tit) : '<span class="chip c-nul" ti
 function bEtiquetas(f,e){
   if(!e.clase) return null;                                   /* fila vacía: sin etiquetas */
   var eti, de=null, cuan=null;
-  var IGUAL   ={t:"igual",    c:"avi", tit:"Mismo importe y misma descripción."};
-  var PARECIDO={t:"parecido", c:"avi", tit:"No es idéntico: el importe o el texto difieren un poco, dentro del margen que la app tolera."};
+  /* verde = calza exacto, morado = calza en parte. Es el mismo código que usan
+     los campos de la ficha de abajo, para que se lean juntos. */
+  var IGUAL   ={t:"igual",    c:"ok",  tit:"Calza exacto: mismo importe y mismo texto."};
+  var PARECIDO={t:"parecido", c:"par", tit:"Calza en parte: el importe o el texto difieren un poco, dentro del margen que la app tolera. Abajo, en morado, está el dato que no calzó."};
   if(!e.ok)
     eti={t:"Incompleta", c:"mal", tit:"Le falta un dato. Esta fila NO se guarda; las demás sí."};
   else if(e.noRepe)
@@ -7795,20 +7961,130 @@ function bEtiquetas(f,e){
     cuan=IGUAL;
   }
   else if(f.repe){
-    eti={t:"Ya registrada", c:"avi", tit:"Hay un movimiento guardado que calza con esta línea. La app avisa; guardar o quitar la fila lo decidís vos."};
-    de  ={t:"movimiento", c:"avi", tit:"La coincidencia es con un movimiento ya guardado"+(f.repe.otra?" de la ventana anterior":" de esta ventana")+"."};
+    eti={t:"Ya registrada", c:"avi", tit:"Hay algo guardado que calza con esta línea. La app avisa; guardar o quitar la fila lo decidís vos."};
+    /* de qué CLASE es lo que se encontró: un movimiento suelto o un permanente
+       que ya está pagado. No es lo mismo y no puede leerse igual. */
+    de  = f.repe.perm
+        ? {t:"permanente pagado", c:"avi",
+           tit:"Lo que calza es un permanente que ya está pagado en "+nomVentana(f.repe.k)+". Guardar esta línea deja el mismo cobro contado dos veces."}
+        : {t:"movimiento", c:"nul",
+           tit:"Lo que calza es un movimiento suelto —no un permanente— de "+nomVentana(f.repe.k)+"."};
     cuan=(f.repe.tipo==="exacta")? IGUAL : PARECIDO;
+    /* Ya se corrigió: el trabajo de esta fila está hecho y lo que queda es
+       sacarla. El veredicto lo dice, para que no dé la impresión de que al
+       guardar se va a duplicar. */
+    if(f.corregida) eti={t:"Corregida · quitar", c:"ok",
+      tit:"Ya se corrigió lo que estaba registrado: "+fmt(f.corregida.antes)+" → "+fmt(f.corregida.ahora)+
+          (f.corregida.perm? ", y con él el permanente «"+f.corregida.perm+"»" : "")+
+          ". Este cobro YA está en "+nomVentana(f.corregida.k)+" con el importe correcto, así que esta fila no hay que guardarla: quitala."};
   }
   else if(f.nota){
     eti={t:"Anotado en nota", c:"plan", tit:"Esta línea del banco calza con una nota. Guardala igual: al terminar el pegado la app propone dar la nota por cubierta."};
-    de  ={t:"nota", c:"plan", tit:"La coincidencia es con una nota del celular, no con un movimiento guardado."};
-    cuan=(f.nota.c && f.nota.c.dif)? {t:"parecido", c:"plan", tit:PARECIDO.tit} : {t:"igual", c:"plan", tit:IGUAL.tit};
+    de  ={t:"nota", c:"plan", tit:"Lo que calza es una nota del celular: todavía no es un movimiento ni un permanente."};
+    cuan=(f.nota.c && f.nota.c.dif)? PARECIDO : IGUAL;
   }
   else if(e.fx)
     eti={t:"Lista", c:"ok", tit:"Nada que revisar: se guarda tal cual, convertida a lempiras."};
   else
     eti={t:"Lista", c:"ok", tit:"Nada que revisar: no calza con ningún movimiento guardado ni con ninguna nota. Se guarda tal cual."};
   return {eti:eti, de:de, cuan:cuan};
+}
+/* ── LA NOTA DE LA FILA ─────────────────────────────────────────────────────
+   La app compara por monto, forma de pago y fecha, y a veces no encuentra la
+   nota que corresponde —o encuentra otra—. Por eso el selector: la elección es
+   suya, igual que con el permanente. Ligar una nota NO mueve plata; lo que hace
+   es que al guardar esa nota se dé por cubierta, para que el mismo gasto no
+   quede contado dos veces (una en Real y otra en Notas).                      */
+function notaElegida(f){
+  if(!f || !f.notaSel) return null;
+  return notasVivas(kAct()).filter(function(n){ return n.id===f.notaSel; })[0]||null;
+}
+function bNotaHTML(f){
+  var vivas=notasVivas(kAct());
+  var eleg=notaElegida(f);
+  /* si no hay ninguna nota viva en la ventana no hay nada que ligar */
+  if(!vivas.length) return "";
+  var det=f.nota? f.nota.n : null;
+  /* El selector no se muestra en todas las filas: eso sería un renglón perdido
+     en cada una. Aparece cuando la app encontró una nota, cuando ya hay una
+     ligada, o cuando él pide ligarla a mano — que es el caso de «la app no
+     encontró la que era». */
+  if(!det && !eleg && !f.notaAbrir)
+    return '<div class="cs est-acc"><button class="ln" data-acc="b-nota-abrir" title="'+esc(
+      "Ligar a mano una nota del celular a esta línea. Sirve cuando la app no encontró la que era —el importe del banco "+
+      "puede venir bastante distinto de lo que anotaste— o no encontró ninguna. Al guardar, la nota ligada se da por "+
+      "cubierta y deja de descontar del rubro.")+'">ligar una nota</button></div>';
+  vivas=vivas.slice().sort(function(a,b){ return String(a.fecha).localeCompare(String(b.fecha)); });
+  function op(n,gordo){
+    var q=String(n.que||"(sin texto)"); if(q.length>26) q=q.slice(0,25)+"…";
+    return '<option value="'+esc(n.id)+'"'+(f.notaSel===n.id?" selected":"")+
+      (gordo?' style="font-weight:700"':'')+'>'+esc(q)+' · '+fmt(n.monto)+' · '+esc(fmtF(n.fecha))+'</option>';
+  }
+  var h='<option value="">— ninguna nota —</option>';
+  if(det) h+='<optgroup label="La app encontró">'+op(det,true)+'</optgroup>';
+  var resto=vivas.filter(function(n){ return !det || n.id!==det.id; });
+  if(resto.length) h+='<optgroup label="'+(det?"Las demás notas de la ventana":"Notas de la ventana")+'">'+
+    resto.map(function(n){ return op(n,false); }).join("")+'</optgroup>';
+  var etq = eleg      ? {t:"nota ligada", c:"ok",
+                        tit:"Al guardar, esa nota se da por cubierta: deja de descontar del rubro y desaparece de la lista de notas. El gasto queda una sola vez, como movimiento."}
+      : det             ? {t:"sin ligar", c:"avi",
+                        tit:"La app encontró una nota que podría ser esta, pero no liga nada sola. Si es esa, elegila en el selector: al guardar se dará por cubierta. Si no, dejala en «ninguna nota» y la nota sigue viva."}
+      : f.notaTocada    ? {t:"ninguna nota", c:"nul",
+                        tit:"Esta línea no cubre ninguna nota. Las notas que queden vivas siguen descontando del rubro."}
+                        : null;
+  var bl=['<div class="cs"><span class="sub" style="font-size:10px">Nota</span>'+
+    '<select class="cel'+(f.notaSel?" sug":" sin-elegir")+'" data-bc="notaSel" style="width:100%" title="'+esc(
+      "Qué nota del celular cubre este cobro. La app deja puesta la que encontró; cambiala si es otra, o poné «ninguna nota» "+
+      "si esta línea no corresponde a ninguna. Al guardar, la nota ligada se da por cubierta y deja de descontar del rubro. "+
+      "Ligar una nota no suma ni resta dinero: los movimientos son lo único que es dinero.")+'">'+h+'</select>'+
+    (etq? '<div style="margin-top:3px" data-t="notaChip">'+chip(etq.t,etq.c,etq.tit)+'</div>' : '')+
+    '</div>'];
+  if(eleg) bl.push('<div class="cs est-det">'+compNota(f,eleg,(f.nota&&f.nota.n.id===eleg.id)? f.nota.c : null)+'</div>');
+  return bl.join("");
+}
+/* ── AL GUARDAR ─────────────────────────────────────────────────────────────
+   Lo que va a pasar con esta fila cuando le dé Guardar, dicho en una frase. No
+   decide nada: lee lo que ya está decidido en las otras columnas. Es la columna
+   para recorrer de arriba abajo antes de guardar; si todas dicen lo que espera,
+   guarda tranquilo. Sale de LA MISMA lógica que ejecuta bGuardar().          */
+function bDestino(f,e){
+  if(!f || bVacia(f)) return null;
+  if(!e.ok) return {t:"No se guarda", c:"mal", partes:[e.txt],
+    tit:"A esta fila le falta un dato, así que Guardar la salta y la deja en la grilla. Las demás sí se guardan."};
+  var k=kAct(), partes=[], pasos=[];
+  var p=permDeFila(f), reemp=null, yaCub=null;
+  if(f.marcar && p){
+    var ya=movDePerm(k,p.id);
+    if(ya && ya.origen==="perm") reemp=ya;                 /* el pago de plantilla se reemplaza */
+    else if(ya) yaCub=ya;                                  /* ya lo pagó otro cobro real */
+  }
+  if(f.nuevoPerm) pasos.push("da de alta «"+String(f.desc||"").trim()+"» como permanente");
+  else if(reemp)  pasos.push("marca «"+(p.desc||p.cat)+"» como pagado y reemplaza su cuota de plantilla");
+  else if(yaCub)  pasos.push("NO se liga: «"+(p.desc||p.cat)+"» ya está pagado por otro cobro");
+  else if(p)      pasos.push("marca «"+(p.desc||p.cat)+"» como pagado");
+  var n=notaElegida(f);
+  if(n) pasos.push("da por cubierta la nota «"+String(n.que||"sin texto").slice(0,24)+"»");
+  /* El duplicado que es el propio pago de plantilla del permanente elegido NO es
+     un duplicado: al guardar se reemplaza. Decirlo dos veces confundía. */
+  var dupReal = f.repe && !f.noRepe && !(reemp && f.repe.mov.id===reemp.id);
+  var dupGrilla = f.repeFila && !f.noRepe;
+  if(f.corregida)
+    return {t:"Ya está · quitala", c:"ok", partes:["ese cobro ya quedó registrado y corregido"].concat(pasos),
+      tit:"Ya corregiste lo que estaba registrado, así que este cobro ya está en la ventana con el importe correcto. Si guardás esta fila, queda dos veces: quitala."};
+  if(dupReal||dupGrilla)
+    return {t:"Ojo · se guarda", c:"avi",
+      partes:["ojo: "+(dupGrilla?"otra fila de este pegado es la misma":"ya hay algo registrado que calza")].concat(pasos.length?pasos:["va a Movimientos como gasto suelto"]),
+      tit:"La app encontró algo que calza, pero no bloquea nada: si guardás, esta fila entra igual y el cobro puede quedar dos veces. Quitala con la × si es un duplicado, o descartá el aviso con «no es duplicado» si es un gasto aparte."};
+  if(!pasos.length) pasos.push("va a Movimientos como gasto suelto");
+  return {t:"Se guarda", c:"ok", partes:pasos,
+    tit:"Al guardar, esta fila entra como movimiento de esta ventana"+(p?" ligado a su permanente":"")+"."};
+}
+function bDestinoHTML(f,e){
+  var d=bDestino(f,e);
+  if(!d) return '<span class="sub" style="font-size:11.5px">—</span>';
+  return '<div class="cs">'+chip(d.t,d.c,d.tit)+'</div>'+
+    '<div class="cs" style="font-size:10.5px;line-height:1.35;color:var(--tx2)">'+
+      d.partes.map(function(x){ return esc(x); }).join('<br>')+'</div>';
 }
 /* La columna Estado no tiene nada que ver con la columna Permanente. Una compara
    contra los MOVIMIENTOS ya guardados; la otra contra la lista de PERMANENTES.
@@ -7826,20 +8102,46 @@ function bEstadoHTML(e,f){
   /* Las dos ranuras solo aparecen cuando hay una coincidencia que describir. Si
      no la hay, la etiqueta y el texto comparten renglón: una fila limpia no
      tiene por qué ocupar tres líneas para decir que no pasa nada. */
-  var cab;
-  if(!et) cab=txt;
-  else if(!et.de) cab='<div class="est-cab">'+chip(et.eti.t,et.eti.c,et.eti.tit)+txt+'</div>';
-  else cab='<div class="est-cab">'+chip(et.eti.t,et.eti.c,et.eti.tit)+'</div>'+
-           '<div class="ranuras">'+ranura(et.de)+ranura(et.cuan)+'</div>'+
-           '<div style="margin-top:4px">'+txt+'</div>';
-  return cab+
-    (e.det? '<div class="est-det">'+e.det+'</div>' : '')+
-    (e.repe? '<div style="margin-top:3px"><button class="ln" style="font-size:10.5px" '+
-      'data-acc="b-nodup" title="'+esc(
+  var bloques=[];
+  if(!et) bloques.push(txt);
+  else if(!et.de) bloques.push('<div class="est-cab">'+chip(et.eti.t,et.eti.c,et.eti.tit)+txt+'</div>');
+  else bloques.push('<div class="est-cab">'+chip(et.eti.t,et.eti.c,et.eti.tit)+'</div>'+
+           '<div class="ranuras" style="margin-top:3px">'+ranura(et.de)+ranura(et.cuan)+'</div>'+
+           '<div style="margin-top:4px">'+txt+'</div>');
+  if(e.det) bloques.push('<div class="est-det">'+e.det+'</div>');
+  if(f && f.corregida)
+    bloques.push('<div class="est-det" data-t="corregida"><b>corregido</b> &middot; '+
+      esc(fmt(f.corregida.antes))+' → <b>'+esc(fmt(f.corregida.ahora))+'</b>'+
+      (f.corregida.perm? '<br>y el permanente «'+esc(f.corregida.perm)+'» &middot; '+
+        esc(fmt(f.corregida.antesPerm))+' → <b>'+esc(fmt(f.corregida.ahora))+'</b>' : '')+
+      '<br><span class="sub">ese cobro ya está en '+esc(nomVentana(f.corregida.k))+
+      ' con el importe correcto &middot; esta fila no hay que guardarla</span></div>');
+  /* Corregir los centavos: el banco manda el importe definitivo y el que ya
+     estaba registrado quedó con unos centavos de más o de menos. Es un botón,
+     no algo que pase solo, y dice exactamente de cuánto a cuánto. */
+  var acc=[];
+  if(f && f.corregida)
+    acc.push('<button class="ln fuerte" data-acc="b-borrar" title="'+esc(
+      "Sacar esta fila de la grilla. El cobro ya está registrado y ya quedó con el importe correcto: guardarla lo dejaría dos veces.")+
+      '">quitar esta fila</button>');
+  if(f && f.repe && f.repe.dif && !f.noRepe && Math.abs(parseMonto(f.monto))>0)
+    acc.push('<button class="ln" data-acc="b-corregir" title="'+esc(
+      "Poner en "+fmt(Math.abs(parseMonto(f.monto)))+" —lo que manda el banco— lo que ya está registrado, que hoy está en "+
+      fmt(f.repe.mov.monto)+". Cambia ESE movimiento y con él el gasto de "+nomVentana(f.repe.k)+
+      (f.repe.perm? ", y también el permanente del que salió, para que la diferencia no vuelva la ventana que viene" : "")+
+      ". No crea ningún movimiento nuevo. Después se puede quitar esta fila: el cobro ya queda bien registrado.")+
+      '">corregir a '+fmt(Math.abs(parseMonto(f.monto)))+
+      (f.repe.perm? ' &middot; el pago y el permanente' : ' &middot; lo ya registrado')+'</button>');
+  if(e.repe)
+    acc.push('<button class="ln" data-acc="b-nodup" title="'+esc(
         "Descartar el aviso: esta fila no es un duplicado. Se guarda como un gasto independiente y no vuelve a marcarse en rojo, ni acá ni en Movimientos.")+
-      '">no es duplicado</button></div>' : '')+
-    (e.noRepe? '<div class="est-det"><button class="ln" style="font-size:10.5px" data-acc="b-sidup" title="'+esc(
-        "Volver a comparar esta fila contra los movimientos ya registrados.")+'">volver a comparar</button></div>' : '');
+      '">no es duplicado</button>');
+  if(e.noRepe)
+    acc.push('<button class="ln" data-acc="b-sidup" title="'+esc(
+        "Volver a comparar esta fila contra lo que ya está registrado.")+'">volver a comparar</button>');
+  if(acc.length) bloques.push('<div class="est-acc">'+acc.join("")+'</div>');
+  return bloques.map(function(x){ return '<div class="cs">'+x+'</div>'; }).join("")+
+    (f? bNotaHTML(f) : "");
 }
 function detMov(m,k){
   if(!m) return "";
@@ -7859,7 +8161,10 @@ function bRepintaFila(i){
   tr.className=bClase(f)+" "+e.clase;
   var tdE=tr.querySelector("[data-est-td]");
   if(tdE) tdE.innerHTML=bEstadoHTML(e,f);
-  tr.children[6].innerHTML=bSugHTML(f);
+  var tdD=tr.querySelector("[data-dest-td]");
+  if(tdD) tdD.innerHTML=bDestinoHTML(f,e);
+  var tdP=tr.querySelector("[data-perm-td]");
+  if(tdP) tdP.innerHTML=bSugHTML(f);
   var sel=tr.querySelector('[data-bc="cat"]');
   if(sel && !f.catManual){
     sel.innerHTML=opciones(catsDe(B.tipo),f.cat);   /* regenerar, no solo asignar: si la
@@ -7876,11 +8181,13 @@ function bRepintaEstados(){
     var e=bEstado(f), tdE=tr.querySelector("[data-est-td]");
     tr.className=bClase(f)+" "+e.clase;
     if(tdE) tdE.innerHTML=bEstadoHTML(e,f);
+    var tdD=tr.querySelector("[data-dest-td]");
+    if(tdD) tdD.innerHTML=bDestinoHTML(f,e);
   });
 }
 function bResumen(){
   var listas=0, faltan=0, otraMon=0, marcadas=0, autos=0, avisoDup=0, repes=0, cubiertas=0, convert=0, altas=0;
-  var enBloque=0, otraVent=0;
+  var enBloque=0, otraVent=0, notasL=0;
   B.filas.forEach(function(f){
     if(bVacia(f)) return;
     var e=bEstado(f);
@@ -7890,6 +8197,7 @@ function bResumen(){
     if(f.sug&&f.sug.yaCubierto) cubiertas++;
     if(f.marcar){ marcadas++; if(f.autoMarcada) autos++; }
     if(f.nuevoPerm&&!f.sug) altas++;
+    if(notaElegida(f)) notasL++;
     if(e.repe){ repes++; if(f.repeFila) enBloque++; else if(f.repe&&f.repe.otra) otraVent++; }
     else if(f.moneda&&f.moneda!=="Lps") otraMon++;
     else if(f.origMon) convert++;
@@ -7906,6 +8214,8 @@ function bResumen(){
   if(otraMon) partes.push('<b class="tx-mal">'+otraMon+'</b> en otra moneda sin tasa disponible');
   if(marcadas) partes.push('<b>'+marcadas+'</b> ligadas a un permanente'+(autos?' ('+autos+' elegidas por la app, cambiables en el selector)':''));
   if(altas) partes.push('<b>'+altas+'</b> se agregan a permanentes al guardar');
+  if(notasL) partes.push('<b>'+notasL+'</b> nota'+(notasL===1?"":"s")+' ligada'+(notasL===1?"":"s")+
+    ' &middot; al guardar se dan por cubiertas y dejan de descontar');
   var html='<div class="resumen">'+partes.join(' &nbsp;·&nbsp; ');
   /* Un estado de cuenta trae varias tarjetas en un mismo archivo, separadas por
      "XXXXXX4098". La forma de pago se aplica a TODO el bloque, así que mezclar
@@ -8107,7 +8417,7 @@ function credGuardar(){
 }
 function bGuardar(){
   var k=kAct(), guardadas=0, reemplazos=0, ligados=0, sinLigar=0, altas=0, quedan=[], tocados=[];
-  var nuevos=[], permsAlta=[];
+  var nuevos=[], permsAlta=[], notasLig=[];
   B.filas.forEach(function(f){
     if(bVacia(f)) return;
     var e=bEstado(f);
@@ -8144,7 +8454,20 @@ function bGuardar(){
       var np=permDesdeMov(k,{tipo:B.tipo, desc:mv.desc, monto:mv.monto, cat:mv.cat, pago:mv.pago, motivo:mv.motivo});
       mv.permId=np.id; aprendeDePago(np, mv); altas++; tocados.push(np.id); permsAlta.push(np.id);
     }
+    /* La nota que él ligó en la grilla se da por cubierta con este guardado: es
+       la decisión que ya tomó al revisar la fila, no hace falta volver a
+       preguntarla. Las que no ligó siguen pasando por el panel de después. */
+    var nl=notaElegida(f);
+    if(nl && notasLig.indexOf(nl.id)<0) notasLig.push(nl.id);
     S.movimientos.push(mv); nuevos.push(mv); guardadas++;
+  });
+  var cubiertas=0, cubFallo=0;
+  notasLig.forEach(function(idn){
+    var n=notaDe(idn); if(!n||n.cubierta) return;
+    var vC=n.cubierta, vT=n.cubiertaTs, vS=n.ts;
+    n.cubierta=true; n.cubiertaTs=Date.now(); n.ts=Date.now();
+    if(notaEscribir(n)) cubiertas++;
+    else { n.cubierta=vC; n.cubiertaTs=vT; n.ts=vS; cubFallo++; }   /* sin nube, la nota sigue viva */
   });
   if(nuevos.length) anota("bloque","Pegado en bloque"+(B.pago?" · "+B.pago:""), nuevos, permsAlta);
   B.filas=quedan;
@@ -8154,6 +8477,8 @@ function bGuardar(){
     bRecalculaTodo(); pintaPegado();
     toast(guardadas+" guardadas"+(ligados?" &middot; "+ligados+" permanentes dados por pagados":"")+
       (altas?" &middot; "+altas+" de alta como permanentes":"")+
+      (cubiertas?" &middot; "+cubiertas+" nota"+(cubiertas===1?"":"s")+" dada"+(cubiertas===1?"":"s")+" por cubierta"+(cubiertas===1?"":"s"):"")+
+      (cubFallo?" &middot; "+cubFallo+" nota(s) no se pudieron marcar: siguen vivas":"")+
       " &middot; "+quedan.length+" incompletas siguen en la tabla",5500);
   } else {
     cierraModal();
@@ -8177,6 +8502,8 @@ function bGuardar(){
       (ligados?" &middot; "+ligados+" permanente"+(ligados===1?"":"s")+" dado"+(ligados===1?"":"s")+" por pagado"+(ligados===1?"":"s"):"")+
       (altas?" &middot; "+altas+" dado"+(altas===1?"":"s")+" de alta como permanente"+(altas===1?"":"s"):"")+
       (reemplazos?" &middot; "+reemplazos+" reemplazaron su plantilla":"")+
+      (cubiertas?" &middot; "+cubiertas+" nota"+(cubiertas===1?"":"s")+" dada"+(cubiertas===1?"":"s")+" por cubierta"+(cubiertas===1?"":"s"):"")+
+      (cubFallo?" &middot; "+cubFallo+" nota(s) no se pudieron marcar: siguen vivas":"")+
       (sinLigar?" &middot; "+sinLigar+" sin ligar: el permanente ya estaba cubierto":""),6000);
   }
   render();

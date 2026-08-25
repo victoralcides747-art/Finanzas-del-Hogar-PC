@@ -46,7 +46,9 @@ header{background:var(--card);border-bottom:1px solid var(--linea);position:stic
 /* Cuenta abierta: la casa de siempre va sin color, como estaba. Cualquier otra
    tiñe la barra entera, para no confundirse de números en un aparato
    compartido. El tono es tenue: distingue, no grita. */
-header.cta{background:var(--cta-bg);border-bottom-color:var(--cta-linea)}
+header.cta,header.ven-atras{background:var(--cta-bg);border-bottom-color:var(--cta-linea)}
+header.ven-atras .marca{color:var(--cta-tx)}
+header.ven-atras .tab:hover{background:rgba(0,0,0,.05)}
 header.cta .marca{color:var(--cta-tx)}
 header.cta .tab:hover{background:rgba(0,0,0,.05)}
 .cta-nom{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
@@ -419,6 +421,27 @@ select.cel.auto{box-shadow:inset 2px 0 0 var(--plan)}
 .tx-mal{color:var(--mal-tx)}
 
 /* ── permanentes ──────────────────────────────────────────────────── */
+/* Las dos casillas de la fila hacen cosas muy distintas y estaban idénticas:
+   dos cuadraditos azules, uno en cada punta. Ahora se distinguen por FORMA
+   antes que por posición — un visto verde para «pagado en este corte», un
+   interruptor gris/azul para «activo o pausado». */
+input[type=checkbox].chk-pago{appearance:none;-webkit-appearance:none;margin:0;width:20px;height:20px;
+  border:1.5px solid var(--linea);border-radius:5px;background:var(--card);
+  cursor:pointer;position:relative;vertical-align:-5px;transition:background .12s,border-color .12s}
+input[type=checkbox].chk-pago:hover{border-color:var(--ok)}
+input[type=checkbox].chk-pago:checked{background:var(--ok);border-color:var(--ok)}
+input[type=checkbox].chk-pago:checked::after{content:"";position:absolute;left:6px;top:2.5px;width:4px;height:9px;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+input[type=checkbox].chk-pago:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+input[type=checkbox].sw-act{appearance:none;-webkit-appearance:none;margin:0;width:34px;height:19px;
+  border:1px solid var(--linea);border-radius:999px;background:var(--linea2);
+  cursor:pointer;position:relative;vertical-align:-5px;transition:background .12s,border-color .12s}
+input[type=checkbox].sw-act::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;
+  border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.28);transition:left .12s}
+input[type=checkbox].sw-act:hover{border-color:var(--plan)}
+input[type=checkbox].sw-act:checked{background:var(--plan);border-color:var(--plan)}
+input[type=checkbox].sw-act:checked::after{left:17px}
+input[type=checkbox].sw-act:focus-visible{outline:2px solid var(--plan);outline-offset:2px}
 tr.perm-fila.marcada td{background:var(--ok-bg)}
 tr.perm-fila.pausada td{opacity:.45}
 tr.perm-fila.vencida td:first-child{box-shadow:inset 3px 0 0 var(--avi)}
@@ -2381,6 +2404,49 @@ function pintaFX(){
       'title="'+(fxCargando?"Consultando…":"Actualizar ahora")+'">↻</button>'+
     (viejo&&!fxCargando?'<span class="fx-p" data-t="fxViejo" title="La tasa no es de hoy.">·</span>':'');
 }
+/* ── EL COLOR DICE EN QUÉ VENTANA ESTOY ─────────────────────────────────────
+   Trabajar en una ventana vieja creyendo que es la de ahora es la forma más
+   fácil de registrar un gasto donde no va: la pantalla se ve exactamente igual.
+   Ahora el color principal lo dice sin tener que leer nada — azul la última,
+   naranja la penúltima, rojo cualquiera más atrás — y la etiqueta del selector
+   dice cuántas atrás. No cambia ningún número ni ninguna regla: es el color. */
+var VENT_TONOS=[null,
+  {plan:"#c2711c", tx:"#8a4f0c", bg:"#fdf5ea", linea:"#eddcc2", pista:"#e6cba3", nom:"naranja"},
+  {plan:"#8e2f3f", tx:"#71232f", bg:"#fbf0f2", linea:"#ecd2d8", pista:"#dfb6bf", nom:"rojo"}];
+function ventanaAtras(){
+  if(!S.ventanas||!S.ventanas.length) return 0;
+  ordenaVentanas();
+  var k=kAct(), i=-1;
+  S.ventanas.forEach(function(v,j){ if(K(v.anio,v.per)===k) i=j; });
+  if(i<0) return 0;
+  return S.ventanas.length-1-i;
+}
+function pintaVentanaTono(){
+  var n=ventanaAtras(), t=(n>0)? VENT_TONOS[Math.min(n,2)] : null;
+  var r=document.documentElement, h=document.querySelector("header");
+  var vars=["--plan","--plan-tx","--plan-bg","--plan-linea","--plan-pista"];
+  pintaCuenta();                                   /* el tinte de cuenta primero */
+  if(!t){
+    vars.forEach(function(v){ r.style.removeProperty(v); });
+    if(h) h.classList.remove("ven-atras");
+    return;
+  }
+  r.style.setProperty("--plan",t.plan);
+  r.style.setProperty("--plan-tx",t.tx);
+  r.style.setProperty("--plan-bg",t.bg);
+  r.style.setProperty("--plan-linea",t.linea);
+  r.style.setProperty("--plan-pista",t.pista);
+  if(h){
+    h.classList.add("ven-atras");
+    h.style.setProperty("--cta-bg",t.bg);
+    h.style.setProperty("--cta-linea",t.linea);
+    h.style.setProperty("--cta-tx",t.tx);
+  }
+  try{
+    var mt=document.querySelector('meta[name="theme-color"]');
+    if(mt) mt.setAttribute("content",t.plan);
+  }catch(e){}
+}
 function pintarSelector(){
   var sel=$("#selVentana");
   ordenaVentanas();
@@ -2390,6 +2456,17 @@ function pintarSelector(){
     var k=K(v.anio,v.per);
     return '<option value="'+esc(k)+'"'+(k===kAct()?" selected":"")+'>'+esc(v.per+" "+v.anio)+'</option>';
   }).join("")+'<option value="__nueva">+ Nueva ventana…</option>';
+  /* la etiqueta dice cuántas ventanas atrás está la que se está mirando */
+  var n=ventanaAtras(), lb=document.querySelector('.vsel label');
+  if(lb){
+    lb.textContent = n? ("Ventana · "+n+" atrás") : "Ventana";
+    lb.title = n? ("Esta NO es la ventana más reciente: hay "+n+" ventana"+(n===1?"":"s")+
+        " después de esta. Por eso la app está en "+(VENT_TONOS[Math.min(n,2)].nom)+
+        " — para que no registres acá algo que va en la de ahora. El color no cambia ningún número.")
+      : "La ventana más reciente. La app va en su color de siempre.";
+  }
+  var vs=document.querySelector('.vsel'); if(vs) vs.setAttribute("data-atras",String(n));
+  pintaVentanaTono();
 }
 
 /* ---------------- bienvenida ---------------- */
@@ -3773,9 +3850,9 @@ function tablaPerms(tipo){
       }).join("")+'</div>'+
       '<div class="avi">Pausar con la casilla <b>Activo</b> o quitar con la ×.</div></div>':'')+
     '<div class="tabla-cont" style="max-height:'+(ing?"38vh":"52vh")+'"><table data-t="tablaPerm'+sufijo+'"><thead><tr>'+
-      th("marca","✓",' style="width:36px" title="'+esc(ing
-        ? "Marcado = tiene su movimiento de ingreso registrado en esta ventana. Sin marcar no es un ingreso real."
-        : "Marcado = tiene su movimiento registrado en esta ventana. Sin marcar no es un gasto real.")+'"')+
+      th("marca",ing?"Recibido":"Pagado",' style="width:82px" title="'+esc(ing
+        ? "Visto verde: marcado = el ingreso ya está registrado en esta ventana. Sin marcar no es un ingreso real. Marcar y desmarcar crea y elimina el movimiento: es lo único de esta tabla que toca dinero. No confundir con el interruptor Activo del otro extremo."
+        : "Visto verde: marcado = ya está pagado en este corte, con su movimiento registrado en esta ventana. Sin marcar no es un gasto real. Marcar y desmarcar crea y elimina el movimiento: es lo único de esta tabla que toca dinero. No confundir con el interruptor Activo del otro extremo.")+'"')+
       th("desc",ing?"Origen":"Comercio",' title="'+esc(ing
         ? "De dónde viene el ingreso, como se identifica en la cuenta."
         : "El texto tal cual lo manda el banco: nombra el comercio, no lo que se paga. De él dependen la detección de duplicados y el reconocimiento automático al pegar en bloque.")+'"')+
@@ -3790,7 +3867,7 @@ function tablaPerms(tipo){
       th("ultimaCuota",ing?"Hasta":"Última cuota",' style="width:112px" title="'+esc(ing
         ? "Último mes en que se espera este ingreso, formato aaaa-mm. Se deja vacío si no tiene fin. Al heredar la lista se avisa si ya pasó."
         : "Mes de la última cuota, formato aaaa-mm. Al heredar la lista a la ventana siguiente se avisa si ya venció.")+'"')+
-      th("activo","Activo",' style="width:104px" title="'+esc(ing
+      th("activo","Activo",' style="width:104px" title="'+esc("Interruptor gris/azul, no un visto: no dice si ya se pagó, dice si se sigue esperando. ")+esc(ing
         ? "Desmarcado = pausado de esta ventana en adelante: la siguiente lo hereda pausado, hasta reactivarlo en alguna futura. Un pausado no cuenta como ingreso presupuestado. Las ventanas anteriores no se tocan, y si en esta ya está marcado, ese ingreso se mantiene."
         : "Desmarcado = pausado de esta ventana en adelante: la siguiente lo hereda pausado, hasta reactivarlo en alguna futura. Un pausado no cuenta en el presupuesto ni en los compromisos pendientes. Las ventanas anteriores no se tocan, y si en esta ya está marcado como pagado, ese gasto se mantiene: la pausa es para lo que viene.")+'"')+
       '<th class="plano" style="width:32px"></th>'+
@@ -3847,8 +3924,16 @@ function filaPerm(f){
   }
   return '<tr class="perm-fila'+(on?" marcada":"")+(act?"":" pausada")+(venc?" vencida":"")+
     (avOn?" avisa":"")+'" data-pid="'+esc(f.id)+'">'+
-    '<td style="text-align:center"><input type="checkbox" data-c="marca"'+(on?" checked":"")+
-      ' title="'+(on?"Movimiento registrado por "+esc(fmt(mv.monto))+". Desmarcar lo elimina.":(ing?"Marcar registra el movimiento de ingreso.":"Marcar registra el movimiento de gasto."))+'"></td>'+
+    /* VISTO VERDE · pagado (o recibido) en este corte. Marcar CREA el movimiento;
+       desmarcar lo elimina. Es lo único de esta fila que toca dinero. */
+    '<td style="text-align:center" title="'+esc(ing
+        ? (on? "Recibido en este corte. El movimiento de ingreso por "+fmt(mv.monto)+" ya está registrado en "+nomVentana(k)+". Desmarcar lo elimina."
+             : "Sin recibir en este corte. Marcar el visto registra el movimiento de ingreso por "+fmt(f.monto)+". Mientras no se marque no es un ingreso real.")
+        : (on? "Pagado en este corte. El movimiento por "+fmt(mv.monto)+" ya está registrado en "+nomVentana(k)+". Desmarcar lo elimina."
+             : "Sin pagar en este corte. Marcar el visto registra el movimiento de gasto por "+fmt(f.monto)+". Mientras no se marque no es un gasto real."))+
+      '"><input type="checkbox" class="chk-pago" data-c="marca"'+(on?" checked":"")+
+      ' title="'+esc(ing? (on?"Recibido · desmarcar elimina el movimiento":"Sin recibir · marcar registra el ingreso")
+                         : (on?"Pagado · desmarcar elimina el movimiento":"Sin pagar · marcar registra el gasto"))+'"></td>'+
     '<td><input class="cel" data-c="desc" title="'+esc(f.desc||"")+'" value="'+esc(f.desc||"")+'"></td>'+
     '<td><input class="cel" data-c="motivo" placeholder="—" title="'+esc(f.motivo||(ing
         ? "De qué se trata este ingreso."
@@ -3891,8 +3976,16 @@ function filaPerm(f){
         : "Poner una fecha límite y que la app te avise unos días antes del último cobro que quieras pagar. Es solo un recordatorio: no cancela ni mueve ningún número.")+
         '">'+(av?"&#9679;":"&#9675;")+'</button>'+
     '</td>'+
-    '<td style="text-align:center;white-space:nowrap"><input type="checkbox" data-c="activo"'+(act?" checked":"")+
-      ' title="'+esc("Marcado = activo. Desmarcado = PAUSADO de esta ventana en adelante: la ventana siguiente lo hereda pausado, y sigue así hasta que lo vuelvas a marcar en alguna futura. Un pausado no cuenta en el presupuesto ni en los compromisos. Si en esta ventana ya está marcado como pagado, ese movimiento se mantiene — la pausa es para lo que viene.")+'">'+
+    /* INTERRUPTOR · activo o en pausa. No toca dinero de esta ventana: decide si
+       este permanente se sigue esperando de acá en adelante. */
+    '<td style="text-align:center;white-space:nowrap" title="'+esc(
+        "Interruptor: encendido = activo, apagado = PAUSADO de esta ventana en adelante. La ventana siguiente lo "+
+        "hereda pausado y sigue así hasta que lo vuelvas a encender. Un pausado no cuenta en el presupuesto ni en "+
+        "los compromisos. No confundir con el visto verde de la izquierda: ese dice si YA SE PAGÓ en este corte y "+
+        "sí toca dinero. Si en esta ventana ya está pagado, ese movimiento se mantiene — la pausa es para lo que viene.")+
+      '"><input type="checkbox" class="sw-act" data-c="activo"'+(act?" checked":"")+
+      ' title="'+esc(act? "Activo · apagar lo pausa de esta ventana en adelante"
+                        : "Pausado desde esta ventana · encender para volver a esperarlo")+'">'+
       (act?'':' <span class="chip mal" style="margin-left:4px">pausado</span>')+'</td>'+
     '<td><button class="borrar" data-acc="perm-borrar" title="Quitarlo de esta ventana">×</button></td>'+
   '</tr>';
@@ -5918,6 +6011,7 @@ document.addEventListener("click", function(ev){
     if(!(nuevo>0)) return;
     var antesM=mv.monto;
     mv.monto = (cts(antesM)<0? -nuevo : nuevo);
+    refxSello(mv);                            /* el sello de la moneda sigue cuadrando */
     if(mv.origen==="perm") mv.editado=true;   /* ya no es la plantilla tal cual */
     /* Si ese pago era el de un permanente, la plantilla también estaba con el
        importe viejo: corregir uno y dejar el otro es dejar el trabajo a medias,
@@ -6126,7 +6220,7 @@ document.addEventListener("input", function(ev){
   if(tr){                                     /* movimientos */
     var m=S.movimientos.filter(function(x){return x.id===tr.getAttribute("data-id");})[0];
     if(!m) return;
-    if(c==="monto"){ m.monto=parseMonto(t.value); t.classList.toggle("neg",cts(m.monto)<0); }
+    if(c==="monto"){ m.monto=parseMonto(t.value); refxSello(m); t.classList.toggle("neg",cts(m.monto)<0); }
     else m[c]=t.value;
     if(m.origen==="perm") m.editado=true;   /* ya no es la plantilla tal cual: no se borra sin preguntar */
     guardar(); return;
@@ -6703,6 +6797,87 @@ function qBancoLinea(l){
   if(!m||!m[2]||!/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(m[2])) return null;
   return [m[1],m[2],m[3],m[4]].concat(m[5]?[m[5]]:[]);
 }
+/* ── DOS COLUMNAS · DÉBITOS Y CRÉDITOS ──────────────────────────────────────
+   Hay estados —Promerica es el caso— que ponen el importe en una de dos
+   columnas, «Compra/Débitos» o «Pagos/Créditos», y dejan VACÍA la que no
+   aplica. Al limpiar las celdas vacías se perdía justo el dato que dice de qué
+   columna salió el número, y un reembolso entraba a la grilla como si fuera un
+   gasto: el mismo dinero contado al revés.
+
+   De qué columna vino se deduce del propio pegado, de dos maneras:
+     · si vino el encabezado, el borde derecho de cada columna lo dice todo;
+     · si no vino, se miran las posiciones de los importes: cuando forman dos
+       grupos claramente separados, el de la derecha son los créditos.
+   Sin ninguna de las dos señales no se inventa nada y todo se comporta como
+   antes. La hora tampoco es un dato: se descarta para que no termine de
+   descripción, que es lo que pasaba con «06:33 PM» comiéndose al comercio. */
+var Q_CAB_DEB=/compras?\s*\/\s*d[eé]bitos?/i, Q_CAB_CRED=/pagos?\s*\/\s*cr[eé]ditos?/i;
+var Q_HORA=/^\d{1,2}:\d{2}(:\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?$/i;
+function qEsHora(c){ return Q_HORA.test(String(c||"").trim()); }
+function qSinHora(c){
+  return String(c||"").replace(/^\s*\d{1,2}:\d{2}(:\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?\s+/i,"").trim() || String(c||"").trim();
+}
+function qFinMonto(l){                       /* dónde TERMINA el último importe */
+  var re=/[+\-−(]?[\d,]+\.\d{2}\)?/g, m, fin=-1;
+  while((m=re.exec(String(l)))!==null) fin=m.index+m[0].length;
+  return fin;
+}
+function qDosCols(lines){
+  var cab=null;
+  for(var i=0;i<lines.length;i++){
+    var l=String(lines[i]);
+    if(Q_CAB_DEB.test(l) && Q_CAB_CRED.test(l)){
+      var a1=l.search(Q_CAB_DEB), a2=l.search(Q_CAB_CRED);
+      if(a1>=0&&a2>a1){
+        var t1=l.slice(a1).match(Q_CAB_DEB), t2=l.slice(a2).match(Q_CAB_CRED);
+        cab={deb:a1+(t1?t1[0].length:0), cred:a2+(t2?t2[0].length:0)};
+      }
+      break;
+    }
+  }
+  /* ¿el pegado trae tabuladores? entonces las columnas ya vienen separadas */
+  var conTab=lines.some(function(l){ return String(l).indexOf("\t")>=0; });
+  if(conTab){
+    /* dos columnas de verdad solo si se ven las DOS formas: importe con celda
+       vacía a la izquierda (crédito) y con celda vacía a la derecha (débito) */
+    var vioCred=false, vioDeb=false;
+    lines.forEach(function(l){
+      var r=String(l).split(/\t/); if(r.length<3) return;
+      var iN=-1;
+      for(var j=r.length-1;j>=0;j--){ if(qParseNum(String(r[j]).trim())!=null){ iN=j; break; } }
+      if(iN<1) return;
+      if(String(r[iN-1]).trim()==="" && iN===r.length-1) vioCred=true;
+      if(iN<r.length-1 && r.slice(iN+1).every(function(x){ return String(x).trim()===""; })) vioDeb=true;
+    });
+    if(cab||(vioCred&&vioDeb)) return {tabs:true};
+    return null;
+  }
+  if(cab && cab.cred>cab.deb) return {tabs:false, deb:cab.deb, cred:cab.cred};
+  /* sin encabezado: dos grupos de posiciones bien separados */
+  var offs=[];
+  lines.forEach(function(l){ var f=qFinMonto(l); if(f>0) offs.push(f); });
+  if(offs.length<3) return null;
+  offs.sort(function(x,y){ return x-y; });
+  var corte=-1, salto=0;
+  for(var q=1;q<offs.length;q++){ var dd=offs[q]-offs[q-1]; if(dd>salto){ salto=dd; corte=q; } }
+  if(salto<10 || corte<1) return null;
+  var izq=offs[corte-1], der=offs[corte];
+  return {tabs:false, deb:izq, cred:der};
+}
+/* De qué columna salió el importe de ESTA fila: "cred", "deb" o nada. */
+function qColFila(raw, linea, dos){
+  if(!dos) return null;
+  if(dos.tabs){
+    if(raw.length<3) return null;
+    var iN=-1;
+    for(var j=raw.length-1;j>=0;j--){ if(qParseNum(String(raw[j]).trim())!=null){ iN=j; break; } }
+    if(iN<1) return null;
+    if(String(raw[iN-1]).trim()==="" ) return "cred";
+    return "deb";
+  }
+  var f=qFinMonto(linea); if(f<=0) return null;
+  return (Math.abs(f-dos.cred) < Math.abs(f-dos.deb)) ? "cred" : "deb";
+}
 /* Débitos · Créditos · Balance: el balance NO es el monto, y un crédito no es gasto. */
 function qBancoNums(cands,total){
   if(cands.length<2) return null;
@@ -6719,19 +6894,23 @@ function qBancoNums(cands,total){
 }
 function qPasteTabular(lines){
   var skip={pago:0,cred:0}, fuera=[], out=[];
+  var dos=qDosCols(lines);                       /* ¿débitos y créditos en columnas? */
   lines.forEach(function(line){
     if(/^saldo\s+anterior/i.test(line)||/^fecha\b/i.test(line)) return;
     if(qMarcaTarjeta(line)) return;              /* separador de tarjeta, no es fila */
-    var cells=line.split(/\t/);
+    var raw=line.split(/\t/);
+    var cells=raw;
     if(cells.length===1) cells=qBancoLinea(line)||line.split(/ {2,}/);
+    var col=qColFila(raw, line, dos);            /* de qué columna salió el importe */
     cells=cells.map(function(c){return String(c).trim();}).filter(function(c){return c!=="";});
     var fecha="", monCel="", cands=[], rest=[];
     cells.forEach(function(c,i){
       var d=qParseDate(c); if(d&&!fecha){ fecha=d; return; }
+      if(qEsHora(c)) return;                     /* la hora no es descripción ni monto */
       if(/^(LPS|HNL|USD|US\$|CAD|CDN|EUR|Lps|\$|€|₡)$/i.test(c)){ if(!monCel) monCel=qMoneda(c); return; }
       var n=qParseNum(c);
       if(n!=null){ cands.push({i:i,v:n,raw:c,dec:qTieneDecimales(c),mon:qMoneda(c)}); return; }
-      rest.push({i:i,t:c});
+      rest.push({i:i,t:qSinHora(c)});
     });
     var pick=null, banco=qBancoNums(cands,cells.length), desc0="";
     if(banco){
@@ -6784,11 +6963,21 @@ function qPasteTabular(lines){
     if(!banco && qEsPagoTarjeta(desc)){
       skip.pago++; fuera.push({fecha:fecha,desc:desc,monto:pick?Math.abs(pick.v):0,
         moneda:(pick&&pick.mon&&pick.mon!=="Lps")?pick.mon:(monCel||"Lps"),
-        motivo:"pago de tarjeta o traslado"}); return; }
+        motivo:"pago de tarjeta o traslado",
+        /* si vino por la columna de créditos es un crédito igual: se lista y él decide */
+        esCred:(col==="cred"||!!(pick&&pick.v<-0.005)), pagoTj:true}); return; }
     /* Importe en negativo: BAC manda así sus créditos, en la misma columna del
        cargo. Es un crédito igual que la columna aparte de Promerica: se aparta
        para que él lo vea y decida, no entra solo a la grilla. */
     var mon=(pick&&pick.mon&&pick.mon!=="Lps")?pick.mon:(monCel||"Lps");
+    /* Y el mismo caso, pero dicho por la columna en vez de por el signo. */
+    if(!banco && pick && col==="cred" && pick.v>0.005){
+      skip.cred++;
+      fuera.push({fecha:fecha, desc:desc, monto:Math.abs(pick.v), moneda:mon,
+                  motivo:"crédito o abono recibido", esCred:true,
+                  pagoTj:qEsPagoTarjeta(desc), neg:false});
+      return;
+    }
     if(!banco && pick && pick.v<-0.005){
       skip.cred++;
       fuera.push({fecha:fecha, desc:desc, monto:Math.abs(pick.v), moneda:mon,
@@ -8206,6 +8395,20 @@ function bEstadoHTML(e,f){
   if(acc.length) bloques.push('<div class="est-acc">'+acc.join("")+'</div>');
   return bloques.map(function(x){ return '<div class="cs">'+x+'</div>'; }).join("")+
     (f? bNotaHTML(f) : "");
+}
+/* Corregir a mano el importe de un movimiento que se capturó en otra moneda deja
+   el sello «USD 17.98 @ 26.8235» diciendo una tasa que ya no da ese número. El
+   importe original NO cambia —eso lo cobró el banco en dólares—, así que lo que
+   se recalcula es la tasa efectiva: importe nuevo ÷ importe original. Así el
+   sello sigue explicando de dónde salió la cifra que está a la vista. */
+function refxSello(m){
+  var s=String(m&&m.fx||"");
+  var q=s.match(/^\s*([A-Z]{3})\s+([\-0-9.,]+)\s*@/);
+  if(!q) return;
+  var orig=Math.abs(parseFloat(String(q[2]).replace(/,/g,"")));
+  var lps=Math.abs(+m.monto||0);
+  if(!(orig>0)||!(lps>0)) return;
+  m.fx=q[1]+" "+orig.toFixed(2)+" @ "+fmtTasa(lps/orig);
 }
 function detMov(m,k){
   if(!m) return "";
